@@ -24,17 +24,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.SimpleFocusRing
-import com.example.ui.theme.DarkBorder
 import com.example.ui.theme.DarkSurfaceVariant
 import com.example.ui.theme.OLEDBlack
-import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.viewmodel.ActiveTimerState
@@ -56,7 +53,9 @@ fun FocusTimerScreen(
         onBack()
     }
 
-    // Pure Steve Jobs simplicity: tapping the screen or ring starts / pauses
+    // Simplified 2-tap interaction:
+    // Tap 1 (when alert sounding): stops alert and resets display to actual time ready to run
+    // Tap 2: immediately starts the timer
     fun handleTap() {
         try {
             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
@@ -66,8 +65,6 @@ fun FocusTimerScreen(
 
         if (isAlerting) {
             onDismissAlert()
-        } else if (state.isCompleted) {
-            onReset()
         } else {
             onTogglePlayPause()
         }
@@ -102,7 +99,7 @@ fun FocusTimerScreen(
             )
         }
 
-        // Center Stage: Pure clean circular ring with ONLY time inside
+        // Center Stage: Pure clean circular ring showing actual time
         Box(
             modifier = Modifier.align(Alignment.Center),
             contentAlignment = Alignment.Center
@@ -117,7 +114,7 @@ fun FocusTimerScreen(
             )
         }
 
-        // Subtle alert dismissal prompt (only visible when time is up and alert is playing)
+        // Subtle prompt when alert is active
         AnimatedVisibility(
             visible = isAlerting,
             enter = fadeIn(),
@@ -127,7 +124,7 @@ fun FocusTimerScreen(
                 .padding(bottom = 48.dp)
         ) {
             Text(
-                text = "Tap to silence",
+                text = "Tap to silence & reset",
                 color = TextSecondary,
                 fontSize = 14.sp,
                 fontFamily = FontFamily.Monospace,

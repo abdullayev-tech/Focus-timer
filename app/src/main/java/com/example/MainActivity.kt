@@ -57,6 +57,7 @@ fun TimerApp(viewModel: TimerViewModel) {
     val soundMode by viewModel.selectedSoundMode.collectAsState()
     val crescendoDuration by viewModel.crescendoDuration.collectAsState()
     val hapticsEnabled by viewModel.hapticsEnabled.collectAsState()
+    val vibrationMode by viewModel.vibrationMode.collectAsState()
 
     var showCreateSheet by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
@@ -88,6 +89,7 @@ fun TimerApp(viewModel: TimerViewModel) {
                     onAddTimerClick = { showCreateSheet = true },
                     onTimerSelect = { timer -> viewModel.openTimer(timer, autoStart = false) },
                     onDeleteTimer = { timer -> viewModel.deleteTimer(timer) },
+                    onReorderTimers = { from, to -> viewModel.reorderTimers(from, to) },
                     onOpenSettings = { showSettingsDialog = true }
                 )
             }
@@ -109,11 +111,13 @@ fun TimerApp(viewModel: TimerViewModel) {
                 selectedMode = soundMode,
                 crescendoDuration = crescendoDuration,
                 hapticsEnabled = hapticsEnabled,
+                vibrationMode = vibrationMode,
                 isTestingAlert = isAlerting,
                 testVolume = alertVolume,
                 onSelectMode = { viewModel.updateSoundMode(it) },
                 onSelectCrescendoDuration = { viewModel.updateCrescendoDuration(it) },
                 onToggleHaptics = { viewModel.updateHapticsEnabled(it) },
+                onSelectVibrationMode = { viewModel.updateVibrationMode(it) },
                 onToggleTestAlert = { viewModel.testAlertSound() },
                 onDismiss = {
                     if (isAlerting) viewModel.dismissAlert()

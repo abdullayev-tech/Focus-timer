@@ -9,6 +9,7 @@ data class TimerEntity(
     val id: Long = 0,
     val label: String,
     val totalSeconds: Long,
+    val displayOrder: Int = 0,
     val createdAt: Long = System.currentTimeMillis()
 ) {
     fun formattedDuration(): String {

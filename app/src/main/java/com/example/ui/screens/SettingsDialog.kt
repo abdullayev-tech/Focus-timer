@@ -13,8 +13,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
@@ -42,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.audio.GentleSoundMode
+import com.example.audio.GentleVibrationMode
 import com.example.ui.theme.BrightWhite
 import com.example.ui.theme.DarkBorder
 import com.example.ui.theme.DarkSurface
@@ -57,15 +60,18 @@ fun SettingsDialog(
     selectedMode: GentleSoundMode,
     crescendoDuration: Int,
     hapticsEnabled: Boolean,
+    vibrationMode: GentleVibrationMode,
     isTestingAlert: Boolean,
     testVolume: Float,
     onSelectMode: (GentleSoundMode) -> Unit,
     onSelectCrescendoDuration: (Int) -> Unit,
     onToggleHaptics: (Boolean) -> Unit,
+    onSelectVibrationMode: (GentleVibrationMode) -> Unit,
     onToggleTestAlert: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scrollState = rememberScrollState()
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -85,8 +91,9 @@ fun SettingsDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(scrollState)
                 .padding(horizontal = 24.dp)
-                .padding(bottom = 36.dp)
+                .padding(bottom = 40.dp)
         ) {
             // Header
             Row(
@@ -95,7 +102,7 @@ fun SettingsDialog(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Timer Sound",
+                    text = "Timer Alert & Haptics",
                     color = TextPrimary,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold
@@ -142,6 +149,7 @@ fun SettingsDialog(
                         )
                         .clickable { onSelectMode(mode) }
                         .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .testTag("sound_mode_${mode.name}")
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -174,9 +182,9 @@ fun SettingsDialog(
                 }
             }
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
-            // Crescendo Ramp Speed
+            // Crescendo Ramp Speed (Slow progressive volume increase)
             Text(
                 text = "VOLUME FADE-IN SPEED",
                 color = TextSecondary,
@@ -185,6 +193,12 @@ fun SettingsDialog(
                 fontFamily = FontFamily.Monospace,
                 letterSpacing = 1.sp
             )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Gradual, whisper-soft crescendo ramp",
+                color = TextMuted,
+                fontSize = 11.sp
+            )
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -192,7 +206,7 @@ fun SettingsDialog(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                listOf(8 to "8 sec", 14 to "14 sec", 20 to "20 sec").forEach { (sec, label) ->
+                listOf(15 to "15s", 25 to "25s", 40 to "40s", 60 to "60s").forEach { (sec, label) ->
                     val isSelected = crescendoDuration == sec
                     Box(
                         modifier = Modifier
@@ -205,7 +219,8 @@ fun SettingsDialog(
                                 RoundedCornerShape(10.dp)
                             )
                             .clickable { onSelectCrescendoDuration(sec) }
-                            .padding(vertical = 10.dp),
+                            .padding(vertical = 10.dp)
+                            .testTag("crescendo_${sec}s"),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -218,7 +233,7 @@ fun SettingsDialog(
                 }
             }
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(22.dp))
 
             // Gentle Haptics Toggle
             Row(
@@ -241,13 +256,13 @@ fun SettingsDialog(
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
-                            text = "Gentle Haptics",
+                            text = "Gentle Vibration",
                             color = TextPrimary,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium
                         )
                         Text(
-                            text = "Soft rhythmic pulse",
+                            text = "Calm, non-jarring haptic pulse",
                             color = TextSecondary,
                             fontSize = 11.sp
                         )
@@ -262,13 +277,78 @@ fun SettingsDialog(
                         checkedTrackColor = StoppedRingArc,
                         uncheckedThumbColor = TextMuted,
                         uncheckedTrackColor = DarkSurface
-                    )
+                    ),
+                    modifier = Modifier.testTag("haptics_switch")
                 )
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            // Vibration Styles
+            if (hapticsEnabled) {
+                Spacer(modifier = Modifier.height(14.dp))
 
-            // Test Alert Button
+                Text(
+                    text = "VIBRATION STYLE",
+                    color = TextSecondary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 1.sp
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                GentleVibrationMode.values().forEach { mode ->
+                    val isSelected = mode == vibrationMode
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 3.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isSelected) DarkSurfaceVariant else DarkSurface)
+                            .border(
+                                1.dp,
+                                if (isSelected) BrightWhite else DarkBorder,
+                                RoundedCornerShape(10.dp)
+                            )
+                            .clickable { onSelectVibrationMode(mode) }
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
+                            .testTag("vibration_${mode.name}")
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = mode.title,
+                                    color = if (isSelected) BrightWhite else TextPrimary,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(1.dp))
+                                Text(
+                                    text = mode.description,
+                                    color = TextSecondary,
+                                    fontSize = 11.sp
+                                )
+                            }
+
+                            if (isSelected) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .background(BrightWhite, CircleShape)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(22.dp))
+
+            // Test Alert & Vibration Button
             Button(
                 onClick = onToggleTestAlert,
                 colors = ButtonDefaults.buttonColors(
@@ -289,7 +369,7 @@ fun SettingsDialog(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (isTestingAlert) "Stop Preview" else "Test Sound Fade-In",
+                    text = if (isTestingAlert) "Stop Preview" else "Preview Sound & Vibration",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold
                 )

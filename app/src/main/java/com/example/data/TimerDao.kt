@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TimerDao {
-    @Query("SELECT * FROM timers ORDER BY createdAt ASC")
+    @Query("SELECT * FROM timers ORDER BY displayOrder ASC, createdAt ASC")
     fun getAllTimers(): Flow<List<TimerEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -18,6 +18,9 @@ interface TimerDao {
 
     @Update
     suspend fun updateTimer(timer: TimerEntity)
+
+    @Update
+    suspend fun updateTimers(timers: List<TimerEntity>)
 
     @Delete
     suspend fun deleteTimer(timer: TimerEntity)

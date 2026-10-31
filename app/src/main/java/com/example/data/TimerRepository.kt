@@ -13,6 +13,10 @@ class TimerRepository(private val timerDao: TimerDao) {
         timerDao.updateTimer(timer)
     }
 
+    suspend fun updateAll(timers: List<TimerEntity>) {
+        timerDao.updateTimers(timers)
+    }
+
     suspend fun delete(timer: TimerEntity) {
         timerDao.deleteTimer(timer)
     }
