@@ -1,0 +1,96 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & Package APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'gradle'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+
+      - name: Prepare Secrets and Keystore
+        run: |
+          echo "Setting up configuration files and keystore..."
+          # Secrets configuration
+          if [ ! -f ".env" ] && [ -f ".env.example" ]; then
+            cp .env.example .env
+          elif [ ! -f ".env" ]; then
+            touch .env
+          fi
+
+          # Prepare debug keystore for signing debug APK
+          if [ ! -f "debug.keystore" ]; then
+            if [ -f "debug.keystore.base64" ]; then
+              echo "Decoding debug.keystore from debug.keystore.base64..."
+              base64 -d debug.keystore.base64 > debug.keystore
+            else
+              echo "Generating fallback debug keystore..."
+              keytool -genkey -v -keystore debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android Debug,O=Android,C=US"
+            fi
+          fi
+
+      - name: Make Gradle Wrapper Executable
+        run: |
+          if [ -f "gradlew" ]; then
+            chmod +x gradlew
+          else
+            gradle wrapper --gradle-version 9.3.1
+            chmod +x gradlew
+          fi
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Prepare APK Output
+        run: |
+          mkdir -p dist
+          find app/build/outputs/apk/debug/ -name "*.apk" -exec cp {} dist/FocusTimer-debug.apk \;
+          echo "Built APK files in dist/:"
+          ls -lh dist/
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FocusTimer-APK
+          path: dist/FocusTimer-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/FocusTimer-debug.apk
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
