@@ -17,10 +17,6 @@ class TimerRepository(private val timerDao: TimerDao) {
         timerDao.updateTimers(timers)
     }
 
-    suspend fun updateSound(id: Long, soundName: String?) {
-        timerDao.updateSound(id, soundName)
-    }
-
     suspend fun delete(timer: TimerEntity) {
         timerDao.deleteTimer(timer)
     }

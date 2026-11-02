@@ -11,7 +11,11 @@ data class TimerEntity(
     val totalSeconds: Long,
     val displayOrder: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
-    val soundName: String? = null // This timer's own sound; null uses the default from settings
+    // This timer's own alert. In each of these, null uses the default from settings
+    val soundName: String? = null,
+    val fadeInSeconds: Int? = null,
+    val autoStopMinutes: Int? = null, // 0 means never
+    val vibrationName: String? = null // A vibration's name, or VIBRATION_OFF_NAME
 ) {
     fun formattedDuration(): String {
         val hours = totalSeconds / 3600

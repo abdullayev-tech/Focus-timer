@@ -23,9 +23,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import com.example.ui.screens.CreateTimerSheet
+import com.example.ui.screens.DevScreen
 import com.example.ui.screens.FocusTimerScreen
 import com.example.ui.screens.SettingsDialog
 import com.example.ui.screens.TimerListScreen
+import com.example.ui.screens.TimerSettingsSheet
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.OLEDBlack
 import com.example.viewmodel.TimerViewModel
@@ -66,9 +68,14 @@ fun TimerApp(viewModel: TimerViewModel) {
     val vibrationMode by viewModel.vibrationMode.collectAsState()
     val ringtoneUri by viewModel.ringtoneUri.collectAsState()
     val autoStopMinutes by viewModel.autoStopMinutes.collectAsState()
+    val stoppedRingColor by viewModel.stoppedRingColor.collectAsState()
 
     var showCreateSheet by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var showDevScreen by remember { mutableStateOf(false) }
+    var settingsTimerId by remember { mutableStateOf<Long?>(null) }
+    // Looked up by id so the sheet always shows what's saved
+    val settingsTimer = timers.firstOrNull { it.id == settingsTimerId }
 
     // Keep the screen awake while the clock runs and while the alert sounds.
     // Once the alert has stopped it can sleep, or a timer left alone would hold it on forever
@@ -99,8 +106,7 @@ fun TimerApp(viewModel: TimerViewModel) {
                     onTogglePlayPause = { viewModel.togglePlayPause() },
                     onReset = { viewModel.resetTimer() },
                     onSilenceAlert = { viewModel.silenceAlert() },
-                    defaultSound = soundMode,
-                    onSelectSound = { viewModel.setActiveTimerSound(it) }
+                    stoppedRingColor = stoppedRingColor
                 )
             } else {
                 TimerListScreen(
@@ -109,11 +115,24 @@ fun TimerApp(viewModel: TimerViewModel) {
                     runningTimeText = activeState.formattedRemaining(),
                     onAddTimerClick = { showCreateSheet = true },
                     onTimerSelect = { timer -> viewModel.openTimer(timer, autoStart = false) },
-                    onDeleteTimer = { timer -> viewModel.deleteTimer(timer) },
+                    onOpenTimerSettings = { timer -> settingsTimerId = timer.id },
                     onSaveOrder = { ordered -> viewModel.saveTimerOrder(ordered) },
-                    onOpenSettings = { showSettingsDialog = true }
+                    onOpenSettings = { showSettingsDialog = true },
+                    stoppedRingColor = stoppedRingColor
                 )
             }
+        }
+
+        // Dev Screen. Gives way when time is up: the focus screen is where the alert is silenced
+        if (showDevScreen && !isFullScreen) {
+            DevScreen(
+                stoppedRingColor = stoppedRingColor,
+                onSelectStoppedRingColor = { viewModel.updateStoppedRingColor(it) },
+                onBack = {
+                    showDevScreen = false
+                    showSettingsDialog = true
+                }
+            )
         }
 
         // Create Timer Sheet
@@ -146,9 +165,39 @@ fun TimerApp(viewModel: TimerViewModel) {
                 onToggleHaptics = { viewModel.updateHapticsEnabled(it) },
                 onSelectVibrationMode = { viewModel.updateVibrationMode(it) },
                 onToggleTestAlert = { viewModel.testAlertSound() },
+                onOpenDev = {
+                    viewModel.silenceAlert()
+                    showSettingsDialog = false
+                    showDevScreen = true
+                },
                 onDismiss = {
                     viewModel.silenceAlert()
                     showSettingsDialog = false
+                }
+            )
+        }
+
+        // One timer's own settings
+        settingsTimer?.let { timer ->
+            TimerSettingsSheet(
+                timer = timer,
+                defaultSound = soundMode,
+                defaultFadeInSeconds = crescendoDuration,
+                defaultVibration = vibrationMode.takeIf { hapticsEnabled },
+                isTestingAlert = isAlerting,
+                testVolume = alertVolume,
+                onUpdate = { viewModel.updateTimer(it) },
+                onPreviewSound = { viewModel.previewSound(it) },
+                onPreviewVibration = { viewModel.previewVibration(it) },
+                onToggleTestAlert = { viewModel.testTimerAlert(timer) },
+                onDelete = {
+                    viewModel.silenceAlert()
+                    viewModel.deleteTimer(timer)
+                    settingsTimerId = null
+                },
+                onDismiss = {
+                    viewModel.silenceAlert()
+                    settingsTimerId = null
                 }
             )
         }

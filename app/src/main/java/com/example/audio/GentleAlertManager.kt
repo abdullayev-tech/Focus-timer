@@ -41,8 +41,20 @@ fun soundModeNamed(name: String?): GentleSoundMode? {
 enum class GentleVibrationMode(val title: String) {
     SOFT_PULSE("Soft Pulse"),
     HEARTBEAT("Heartbeat"),
-    WAVE("Wave")
+    WAVE("Wave"),
+    KNOCK("Knock")
 }
+
+/** The vibration with this saved name, or null for no name or one that no longer exists. */
+fun vibrationModeNamed(name: String?): GentleVibrationMode? {
+    return GentleVibrationMode.values().firstOrNull { it.name == name }
+}
+
+// Saved as a timer's own vibration when that timer doesn't vibrate at all
+const val VIBRATION_OFF_NAME = "OFF"
+
+// The fade-in slider's stops, in seconds
+val FADE_IN_STOPS = listOf(3, 5, 7, 10, 15, 20, 25, 30, 40, 50, 60)
 
 /**
  * One repeat of a vibration.
@@ -74,6 +86,13 @@ private fun GentleVibrationMode.pattern(): VibrationPattern = when (this) {
         strengths = floatArrayOf(0.15f, 0.3f, 0.5f, 0.7f, 0.9f, 1f, 0.9f, 0.7f, 0.5f, 0.3f, 0.15f),
         plainTimings = longArrayOf(0, 120, 100, 200, 100, 320, 100, 200, 100, 120),
         pauseMillis = 1000
+    )
+    // The others are soft swells; this one is three firm taps, easy to feel through a pocket
+    GentleVibrationMode.KNOCK -> VibrationPattern(
+        timings = longArrayOf(90, 120, 90, 120, 90),
+        strengths = floatArrayOf(1f, 0f, 1f, 0f, 1f),
+        plainTimings = longArrayOf(0, 90, 120, 90, 120, 90),
+        pauseMillis = 1100
     )
 }
 
@@ -114,28 +133,34 @@ class GentleAlertManager(private val context: Context) {
 
     // Sound and vibration configuration
     var soundMode: GentleSoundMode = GentleSoundMode.AMBIENT_BREATHE
-    var crescendoDurationSeconds: Int = 25 // 0 means no fade-in: full level at once
+    var crescendoDurationSeconds: Int = 25
     var ringtoneUri: Uri? = null // The sound picked from the phone; null is its alarm sound
     var autoStopMinutes: Int = 3 // The alert stops by itself after this long; 0 means never
     var maxVolume: Float = 0.65f // Share of the phone's alarm volume at the end of the fade-in
     var hapticsEnabled: Boolean = true
     var vibrationMode: GentleVibrationMode = GentleVibrationMode.SOFT_PULSE
 
-    fun startGentleAlert(mode: GentleSoundMode = soundMode) {
+    /** The defaults are the choices from settings; a timer with its own passes those instead. */
+    fun startGentleAlert(
+        mode: GentleSoundMode = soundMode,
+        fadeInSeconds: Int = crescendoDurationSeconds,
+        stopAfterMinutes: Int = autoStopMinutes,
+        vibration: GentleVibrationMode? = if (hapticsEnabled) vibrationMode else null
+    ) {
         if (_isAlerting.value) return
         stopAlert() // A sound preview may still be playing
         _isAlerting.value = true
         _currentVolume.value = 0f
 
-        startSound(mode, isPreview = false)
+        startSound(mode, isPreview = false, fadeInSeconds = fadeInSeconds)
 
-        if (hapticsEnabled) {
-            startGentleHaptics()
+        if (vibration != null) {
+            startGentleHaptics(vibration, fadeInSeconds)
         }
 
-        if (autoStopMinutes > 0) {
+        if (stopAfterMinutes > 0) {
             autoStopJob = scope.launch {
-                delay(autoStopMinutes * 60_000L)
+                delay(stopAfterMinutes * 60_000L)
                 stopAlert()
             }
         }
@@ -143,24 +168,24 @@ class GentleAlertManager(private val context: Context) {
 
     fun previewSound(mode: GentleSoundMode = soundMode) {
         stopAlert()
-        startSound(mode, isPreview = true)
+        startSound(mode, isPreview = true, fadeInSeconds = crescendoDurationSeconds)
         autoStopJob = scope.launch {
             delay(SOUND_PREVIEW_MILLIS)
             stopAlert()
         }
     }
 
-    private fun startSound(mode: GentleSoundMode, isPreview: Boolean) {
+    private fun startSound(mode: GentleSoundMode, isPreview: Boolean, fadeInSeconds: Int) {
         when (mode) {
-            GentleSoundMode.AMBIENT_BREATHE -> startSynthesizedAmbient(toneType = 1, isPreview = isPreview)
-            GentleSoundMode.CLOCK_TIMER -> startSynthesizedAmbient(toneType = 2, isPreview = isPreview)
-            GentleSoundMode.BELL -> startSynthesizedAmbient(toneType = 3, isPreview = isPreview)
-            GentleSoundMode.MARIMBA -> startSynthesizedAmbient(toneType = 4, isPreview = isPreview)
-            GentleSoundMode.SYSTEM_GENTLE -> startSystemTone(isPreview)
+            GentleSoundMode.AMBIENT_BREATHE -> startSynthesizedAmbient(toneType = 1, isPreview, fadeInSeconds)
+            GentleSoundMode.CLOCK_TIMER -> startSynthesizedAmbient(toneType = 2, isPreview, fadeInSeconds)
+            GentleSoundMode.BELL -> startSynthesizedAmbient(toneType = 3, isPreview, fadeInSeconds)
+            GentleSoundMode.MARIMBA -> startSynthesizedAmbient(toneType = 4, isPreview, fadeInSeconds)
+            GentleSoundMode.SYSTEM_GENTLE -> startSystemTone(isPreview, fadeInSeconds)
         }
     }
 
-    private fun startSystemTone(isPreview: Boolean) {
+    private fun startSystemTone(isPreview: Boolean, fadeInSeconds: Int) {
         try {
             val alertUri = ringtoneUri
                 ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
@@ -175,24 +200,16 @@ class GentleAlertManager(private val context: Context) {
                         .build()
                 )
                 isLooping = true
-                val startVolume = when {
-                    isPreview -> SOUND_PREVIEW_LEVEL * maxVolume
-                    crescendoDurationSeconds == 0 -> maxVolume
-                    else -> 0.001f
-                }
+                val startVolume = if (isPreview) SOUND_PREVIEW_LEVEL * maxVolume else 0.001f
                 setVolume(startVolume, startVolume)
                 prepare()
                 start()
             }
 
             if (isPreview) return
-            if (crescendoDurationSeconds == 0) {
-                _currentVolume.value = 1f
-                return
-            }
 
             volumeJob = scope.launch {
-                val steps = crescendoDurationSeconds * 2
+                val steps = fadeInSeconds * 2
                 for (i in 1..steps) {
                     if (!isActive) break
                     delay(500)
@@ -204,7 +221,7 @@ class GentleAlertManager(private val context: Context) {
                 }
             }
         } catch (e: Exception) {
-            startSynthesizedAmbient(toneType = 1, isPreview = isPreview)
+            startSynthesizedAmbient(toneType = 1, isPreview, fadeInSeconds)
         }
     }
 
@@ -212,7 +229,7 @@ class GentleAlertManager(private val context: Context) {
      * Synthesizes warm, non-intrusive ambient meditative swells using AudioTrack.
      * Completely avoids harsh transients, clicks, or abrupt attacks.
      */
-    private fun startSynthesizedAmbient(toneType: Int, isPreview: Boolean) {
+    private fun startSynthesizedAmbient(toneType: Int, isPreview: Boolean, fadeInSeconds: Int) {
         alertJob = scope.launch {
             val sampleRate = 44100
             val minBufSize = AudioTrack.getMinBufferSize(
@@ -244,22 +261,29 @@ class GentleAlertManager(private val context: Context) {
             track.play()
 
             val startTime = System.currentTimeMillis()
-            val totalRampMillis = (crescendoDurationSeconds * 1000L).coerceAtLeast(1000L)
+            val totalRampMillis = fadeInSeconds * 1000L
+
+            // Quadratic curve (progress^2): starts at true whisper quiet and increases very slowly
+            fun rampAt(elapsedMillis: Long): Float {
+                if (isPreview) return SOUND_PREVIEW_LEVEL
+                val progress = (elapsedMillis.toFloat() / totalRampMillis).coerceIn(0f, 1.0f)
+                return (progress * progress).coerceIn(0.003f, 1.0f)
+            }
 
             while (isActive && (isPreview || _isAlerting.value)) {
                 val elapsed = System.currentTimeMillis() - startTime
-                val progress = (elapsed.toFloat() / totalRampMillis).coerceIn(0f, 1.0f)
-                // Quadratic curve (progress^2): starts at true whisper quiet and increases very slowly
-                val rampFactor = when {
-                    isPreview -> SOUND_PREVIEW_LEVEL
-                    crescendoDurationSeconds == 0 -> 1f
-                    else -> (progress * progress).coerceIn(0.003f, 1.0f)
-                }
-                val currentVol = rampFactor * maxVolume
-                if (!isPreview) _currentVolume.value = rampFactor
+                val startRamp = rampAt(elapsed)
+                val endRamp = rampAt(elapsed + (swellSeconds(toneType) * 1000f).toLong())
+                if (!isPreview) _currentVolume.value = startRamp
 
-                // Generate a 3.2-second tranquil swell buffer
-                val pcmBuffer = generateAmbientSamples(sampleRate, toneType, currentVol)
+                // Generate one tranquil swell. It rises from start to end as it plays, because a
+                // short fade-in is over before one swell is
+                val pcmBuffer = generateAmbientSamples(
+                    sampleRate,
+                    toneType,
+                    startVolume = startRamp * maxVolume,
+                    endVolume = endRamp * maxVolume
+                )
                 track.write(pcmBuffer, 0, pcmBuffer.size)
 
                 // Brief serene breathing space between swells
@@ -268,17 +292,19 @@ class GentleAlertManager(private val context: Context) {
         }
     }
 
+    private fun swellSeconds(toneType: Int): Float = when (toneType) {
+        2 -> CLOCK_TIMER_GROUP_SECONDS
+        4 -> MARIMBA_ROUND_SECONDS
+        else -> 3.2f
+    }
+
     private fun generateAmbientSamples(
         sampleRate: Int,
         toneType: Int,
-        volume: Float
+        startVolume: Float,
+        endVolume: Float
     ): ShortArray {
-        val durationSec = when (toneType) {
-            2 -> CLOCK_TIMER_GROUP_SECONDS
-            4 -> MARIMBA_ROUND_SECONDS
-            else -> 3.2f
-        }
-        val numSamples = (durationSec * sampleRate).toInt()
+        val numSamples = (swellSeconds(toneType) * sampleRate).toInt()
         val buffer = ShortArray(numSamples)
 
         for (i in 0 until numSamples) {
@@ -344,6 +370,7 @@ class GentleAlertManager(private val context: Context) {
             }
 
             // Scale to 16-bit PCM with master volume
+            val volume = startVolume + (endVolume - startVolume) * (i.toFloat() / numSamples)
             val scaled = (sample * volume * 32767.0).coerceIn(-32767.0, 32767.0)
             buffer[i] = scaled.toInt().toShort()
         }
@@ -351,14 +378,14 @@ class GentleAlertManager(private val context: Context) {
         return buffer
     }
 
-    private fun startGentleHaptics() {
+    private fun startGentleHaptics(vibration: GentleVibrationMode, fadeInSeconds: Int) {
         hapticJob = scope.launch {
             val vibrator = getVibrator() ?: return@launch
             // Initial 1.8s delay so the quiet ambient sound begins first
             delay(1800)
 
             val startTime = System.currentTimeMillis()
-            val totalRampMillis = (crescendoDurationSeconds * 1000L).coerceAtLeast(1000L)
+            val totalRampMillis = fadeInSeconds * 1000L
 
             while (isActive && _isAlerting.value) {
                 // Rises over the same time as the sound, so the two swell together
@@ -366,7 +393,7 @@ class GentleAlertManager(private val context: Context) {
                 val progress = (elapsed.toFloat() / totalRampMillis).coerceIn(0f, 1f)
                 val strength = VIBRATION_START_STRENGTH + (1f - VIBRATION_START_STRENGTH) * progress
 
-                val pattern = vibrationMode.pattern()
+                val pattern = vibration.pattern()
                 playVibration(vibrator, pattern, strength)
                 delay(pattern.timings.sum() + pattern.pauseMillis)
             }

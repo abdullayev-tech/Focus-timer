@@ -10,25 +10,18 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,12 +30,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.audio.GentleSoundMode
-import com.example.audio.soundModeNamed
 import com.example.ui.components.SimpleFocusRing
 import com.example.ui.theme.CompletedRingArc
 import com.example.ui.theme.DarkSurfaceVariant
 import com.example.ui.theme.OLEDBlack
+import com.example.ui.theme.StoppedRingColor
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.viewmodel.ActiveTimerState
@@ -55,13 +47,10 @@ fun FocusTimerScreen(
     onTogglePlayPause: () -> Unit,
     onReset: () -> Unit,
     onSilenceAlert: () -> Unit,
-    defaultSound: GentleSoundMode,
-    onSelectSound: (GentleSoundMode?) -> Unit,
+    stoppedRingColor: StoppedRingColor,
     modifier: Modifier = Modifier
 ) {
     val view = LocalView.current
-    val timerSound = soundModeNamed(state.timerEntity?.soundName)
-    var showSoundSheet by remember { mutableStateOf(false) }
 
     // Handle system back navigation
     BackHandler {
@@ -152,42 +141,10 @@ fun FocusTimerScreen(
                 isRunning = state.isRunning,
                 isCompleted = state.isCompleted || isAlerting,
                 isAlerting = isAlerting,
+                stoppedColor = stoppedRingColor,
                 onTap = { handleTap() },
                 size = 320.dp
             )
-        }
-
-        // This timer's sound can be changed while the clock is stopped; it's gone while it runs
-        AnimatedVisibility(
-            visible = !state.isRunning && !state.isCompleted && !isAlerting,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 48.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(DarkSurfaceVariant)
-                    .clickable { showSoundSheet = true }
-                    .padding(horizontal = 14.dp, vertical = 8.dp)
-                    .testTag("focus_sound_button"),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.MusicNote,
-                    contentDescription = null,
-                    tint = TextSecondary,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = timerSound?.title ?: "Default sound",
-                    color = TextSecondary,
-                    fontSize = 14.sp
-                )
-            }
         }
 
         // Subtle prompt once time is up
@@ -207,14 +164,5 @@ fun FocusTimerScreen(
                 modifier = Modifier.testTag("silence_alert_hint")
             )
         }
-    }
-
-    if (showSoundSheet) {
-        TimerSoundSheet(
-            selected = timerSound,
-            defaultSound = defaultSound,
-            onSelect = onSelectSound,
-            onDismiss = { showSoundSheet = false }
-        )
     }
 }

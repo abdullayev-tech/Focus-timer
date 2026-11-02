@@ -7,11 +7,14 @@ import androidx.lifecycle.viewModelScope
 import com.example.audio.GentleAlertManager
 import com.example.audio.GentleSoundMode
 import com.example.audio.GentleVibrationMode
+import com.example.audio.VIBRATION_OFF_NAME
 import com.example.audio.soundModeNamed
+import com.example.audio.vibrationModeNamed
 import com.example.data.TimerDatabase
 import com.example.data.TimerEntity
 import com.example.data.TimerPreferences
 import com.example.data.TimerRepository
+import com.example.ui.theme.StoppedRingColor
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -89,6 +92,9 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _autoStopMinutes = MutableStateFlow(prefs.getAutoStopMinutes())
     val autoStopMinutes: StateFlow<Int> = _autoStopMinutes.asStateFlow()
+
+    private val _stoppedRingColor = MutableStateFlow(prefs.getStoppedRingColor())
+    val stoppedRingColor: StateFlow<StoppedRingColor> = _stoppedRingColor.asStateFlow()
 
     private var countdownJob: Job? = null
     private var lastTickTime: Long = 0L
@@ -172,9 +178,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
                     isCompleted = updatedMillis <= 0L
                 )
                 if (justFinished) {
-                    // The timer's own sound if it has one, otherwise the default from settings
-                    val timerSound = soundModeNamed(_activeState.value.timerEntity?.soundName)
-                    alertManager.startGentleAlert(timerSound ?: _selectedSoundMode.value)
+                    startAlertFor(_activeState.value.timerEntity)
                     // The focus screen is where the alert can be silenced
                     _isFullScreen.value = true
                 }
@@ -235,16 +239,40 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Gives the open timer its own sound; null goes back to the default from settings. */
-    fun setActiveTimerSound(sound: GentleSoundMode?) {
-        val timer = _activeState.value.timerEntity ?: return
-        _activeState.value = _activeState.value.copy(
-            timerEntity = timer.copy(soundName = sound?.name)
+    /** The timer's own choices where it has them, otherwise the defaults from settings. */
+    private fun startAlertFor(timer: TimerEntity?) {
+        alertManager.startGentleAlert(
+            mode = soundModeNamed(timer?.soundName) ?: _selectedSoundMode.value,
+            fadeInSeconds = timer?.fadeInSeconds ?: _crescendoDuration.value,
+            stopAfterMinutes = timer?.autoStopMinutes ?: _autoStopMinutes.value,
+            vibration = when (timer?.vibrationName) {
+                VIBRATION_OFF_NAME -> null
+                else -> vibrationModeNamed(timer?.vibrationName)
+                    ?: _vibrationMode.value.takeIf { _hapticsEnabled.value }
+            }
         )
-        viewModelScope.launch {
-            repository.updateSound(timer.id, sound?.name)
+    }
+
+    /** Saves a timer's own alert choices. A session already running with it uses them too. */
+    fun updateTimer(timer: TimerEntity) {
+        if (_activeState.value.timerEntity?.id == timer.id) {
+            _activeState.value = _activeState.value.copy(timerEntity = timer)
         }
-        previewSound(sound)
+        viewModelScope.launch {
+            repository.update(timer)
+        }
+    }
+
+    fun testTimerAlert(timer: TimerEntity) {
+        if (alertManager.isAlerting.value) {
+            alertManager.stopAlert()
+        } else {
+            startAlertFor(timer)
+        }
+    }
+
+    fun previewVibration(mode: GentleVibrationMode) {
+        alertManager.triggerVibrationPreview(mode)
     }
 
     fun previewSound(sound: GentleSoundMode?) {
@@ -288,6 +316,11 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         _autoStopMinutes.value = minutes
         alertManager.autoStopMinutes = minutes
         prefs.setAutoStopMinutes(minutes)
+    }
+
+    fun updateStoppedRingColor(color: StoppedRingColor) {
+        _stoppedRingColor.value = color
+        prefs.setStoppedRingColor(color)
     }
 
     fun updateCrescendoDuration(seconds: Int) {

@@ -25,7 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -41,13 +41,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -60,7 +64,8 @@ import com.example.ui.theme.DarkBorder
 import com.example.ui.theme.DarkSurface
 import com.example.ui.theme.DarkSurfaceVariant
 import com.example.ui.theme.OLEDBlack
-import com.example.ui.theme.StoppedRingArc
+import com.example.ui.theme.StoppedRingColor
+import com.example.ui.theme.TextLabel
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
@@ -72,9 +77,10 @@ fun TimerListScreen(
     runningTimeText: String,
     onAddTimerClick: () -> Unit,
     onTimerSelect: (TimerEntity) -> Unit,
-    onDeleteTimer: (TimerEntity) -> Unit,
+    onOpenTimerSettings: (TimerEntity) -> Unit,
     onSaveOrder: (List<TimerEntity>) -> Unit,
     onOpenSettings: () -> Unit,
+    stoppedRingColor: StoppedRingColor,
     modifier: Modifier = Modifier
 ) {
     val view = LocalView.current
@@ -211,6 +217,7 @@ fun TimerListScreen(
                                 timer = timer,
                                 runningTimeText = runningTimeText.takeIf { timer.id == runningTimerId },
                                 isDragged = isDragged,
+                                dragBorderColor = stoppedRingColor.arc,
                                 // Letting go of a held card must not also tap what's under the finger
                                 onClick = { if (reorder.draggedId == null) onTimerSelect(timer) },
                                 onDragStart = {
@@ -219,7 +226,7 @@ fun TimerListScreen(
                                 },
                                 onDrag = { deltaY -> reorder.drag(deltaY) },
                                 onDragEnd = { reorder.end() },
-                                onDelete = { if (reorder.draggedId == null) onDeleteTimer(timer) },
+                                onOpenSettings = { if (reorder.draggedId == null) onOpenTimerSettings(timer) },
                                 modifier = if (isDragged) {
                                     // The held card follows the finger and floats above the others
                                     Modifier
@@ -247,11 +254,12 @@ fun TimerRowCard(
     timer: TimerEntity,
     runningTimeText: String?,
     isDragged: Boolean,
+    dragBorderColor: Color,
     onClick: () -> Unit,
     onDragStart: () -> Unit,
     onDrag: (deltaY: Float) -> Unit,
     onDragEnd: () -> Unit,
-    onDelete: () -> Unit,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -264,7 +272,7 @@ fun TimerRowCard(
             .border(
                 1.dp,
                 when {
-                    isDragged -> StoppedRingArc
+                    isDragged -> dragBorderColor
                     runningTimeText != null -> AppleTimerOrange
                     else -> DarkBorder
                 },
@@ -292,9 +300,16 @@ fun TimerRowCard(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    // A timer with its own sound says so
-                    text = soundModeNamed(timer.soundName)?.let { "${timer.label} \u00B7 ${it.title}" } ?: timer.label,
-                    color = TextSecondary,
+                    text = buildAnnotatedString {
+                        append(timer.label)
+                        // A timer with its own sound says so, quietly
+                        soundModeNamed(timer.soundName)?.let { sound ->
+                            withStyle(SpanStyle(color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Normal)) {
+                                append("  ${sound.title}")
+                            }
+                        }
+                    },
+                    color = TextLabel,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -313,14 +328,14 @@ fun TimerRowCard(
             }
 
             IconButton(
-                onClick = onDelete,
+                onClick = onOpenSettings,
                 modifier = Modifier
                     .size(40.dp)
-                    .testTag("delete_timer_${timer.id}")
+                    .testTag("timer_settings_${timer.id}")
             ) {
                 Icon(
-                    imageVector = Icons.Default.DeleteOutline,
-                    contentDescription = "Delete",
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "Timer Settings",
                     tint = TextMuted,
                     modifier = Modifier.size(20.dp)
                 )

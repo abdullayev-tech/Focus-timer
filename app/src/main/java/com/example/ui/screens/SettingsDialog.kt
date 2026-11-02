@@ -3,6 +3,7 @@ package com.example.ui.screens
 import android.content.Intent
 import android.media.RingtoneManager
 import android.net.Uri
+import android.view.HapticFeedbackConstants
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -25,26 +26,35 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.DeveloperMode
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.audio.FADE_IN_STOPS
 import com.example.audio.GentleSoundMode
 import com.example.audio.GentleVibrationMode
 import com.example.ui.theme.AppleTimerOrange
@@ -54,12 +64,10 @@ import com.example.ui.theme.DarkSurfaceVariant
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
-
-// 0 is no fade-in: full level at once
-private val FADE_IN_OPTIONS = listOf(0, 15, 25, 40, 60)
+import kotlin.math.roundToInt
 
 // In minutes; 0 is never
-private val AUTO_STOP_OPTIONS = listOf(1, 3, 5, 0)
+internal val AUTO_STOP_OPTIONS = listOf(1, 3, 5, 0)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,6 +87,7 @@ fun SettingsDialog(
     onToggleHaptics: (Boolean) -> Unit,
     onSelectVibrationMode: (GentleVibrationMode) -> Unit,
     onToggleTestAlert: () -> Unit,
+    onOpenDev: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -128,7 +137,21 @@ fun SettingsDialog(
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 24.dp)
         ) {
-            SheetHeader(title = "Alert", onDone = onDismiss)
+            SheetHeader(title = "Alert", onDone = onDismiss) {
+                IconButton(
+                    onClick = onOpenDev,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .testTag("dev_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DeveloperMode,
+                        contentDescription = "Developer",
+                        tint = TextMuted,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
 
             SettingsGroup(title = "Sound", footer = "Plays at your alarm volume") {
                 GentleSoundMode.values().forEach { mode ->
@@ -144,13 +167,11 @@ fun SettingsDialog(
                     )
                     RowDivider()
                 }
-                SegmentRow(
-                    title = "Fade in",
-                    options = FADE_IN_OPTIONS,
+                FadeInSlider(
+                    stops = FADE_IN_STOPS,
                     selected = crescendoDuration,
-                    optionLabel = { if (it == 0) "Off" else "${it}s" },
-                    onSelect = onSelectCrescendoDuration,
-                    testTagPrefix = "crescendo"
+                    stopLabel = { "${it}s" },
+                    onSelect = onSelectCrescendoDuration
                 )
                 RowDivider()
                 SegmentRow(
@@ -184,34 +205,43 @@ fun SettingsDialog(
                 }
             }
 
-            SettingsGroup {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 44.dp)
-                        .clickable(onClick = onToggleTestAlert)
-                        .testTag("test_alert_button"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = if (isTestingAlert) "Stop Test" else "Test Alert",
-                        color = AppleTimerOrange,
-                        fontSize = 16.sp
-                    )
-                }
+            TestAlertGroup(
+                isTesting = isTestingAlert,
+                testVolume = testVolume,
+                onToggle = onToggleTestAlert
+            )
+        }
+    }
+}
 
-                // The fade-in starts almost silent, so show that the test is really running
-                if (isTestingAlert) {
-                    LinearProgressIndicator(
-                        progress = { testVolume.coerceIn(0f, 1f) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(2.dp),
-                        color = AppleTimerOrange,
-                        trackColor = DarkSurfaceVariant
-                    )
-                }
-            }
+@Composable
+internal fun TestAlertGroup(isTesting: Boolean, testVolume: Float, onToggle: () -> Unit) {
+    SettingsGroup {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 44.dp)
+                .clickable(onClick = onToggle)
+                .testTag("test_alert_button"),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = if (isTesting) "Stop Test" else "Test Alert",
+                color = AppleTimerOrange,
+                fontSize = 16.sp
+            )
+        }
+
+        // The fade-in starts almost silent, so show that the test is really running
+        if (isTesting) {
+            LinearProgressIndicator(
+                progress = { testVolume.coerceIn(0f, 1f) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(2.dp),
+                color = AppleTimerOrange,
+                trackColor = DarkSurfaceVariant
+            )
         }
     }
 }
@@ -229,14 +259,29 @@ internal fun SheetDragHandle() {
 }
 
 @Composable
-internal fun SheetHeader(title: String, onDone: () -> Unit) {
+internal fun SheetHeader(
+    title: String,
+    onDone: () -> Unit,
+    leading: (@Composable () -> Unit)? = null
+) {
     Box(modifier = Modifier.fillMaxWidth()) {
+        if (leading != null) {
+            Box(modifier = Modifier.align(Alignment.CenterStart)) {
+                leading()
+            }
+        }
+
         Text(
             text = title,
             color = TextPrimary,
             fontSize = 18.sp,
             fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.align(Alignment.Center)
+            // A timer's label can be long: it stops short of the buttons on either side
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .align(Alignment.Center)
+                .padding(horizontal = 72.dp)
         )
 
         TextButton(
@@ -294,7 +339,8 @@ internal fun CheckRow(
     isSelected: Boolean,
     value: String? = null,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    leading: (@Composable () -> Unit)? = null
 ) {
     Row(
         modifier = modifier
@@ -305,6 +351,11 @@ internal fun CheckRow(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (leading != null) {
+            leading()
+            Spacer(modifier = Modifier.width(12.dp))
+        }
+
         Text(
             text = title,
             color = TextPrimary,
@@ -340,13 +391,75 @@ internal fun CheckRow(
     }
 }
 
+/**
+ * Fade-in as a slider, one stop at a time, with a tick under the finger at each.
+ * Nothing is saved until the finger lifts.
+ */
 @Composable
-private fun SegmentRow(
+internal fun <T> FadeInSlider(
+    stops: List<T>,
+    selected: T,
+    stopLabel: (T) -> String,
+    onSelect: (T) -> Unit
+) {
+    val view = LocalView.current
+    var position by remember(selected) {
+        mutableFloatStateOf(stops.indexOf(selected).coerceAtLeast(0).toFloat())
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Fade in",
+                color = TextPrimary,
+                fontSize = 16.sp
+            )
+            Text(
+                text = stopLabel(stops[position.roundToInt()]),
+                color = TextSecondary,
+                fontSize = 14.sp,
+                modifier = Modifier.testTag("fade_in_value")
+            )
+        }
+
+        Slider(
+            value = position,
+            onValueChange = { dragged ->
+                if (dragged.roundToInt() != position.roundToInt()) {
+                    view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                }
+                position = dragged
+            },
+            onValueChangeFinished = { onSelect(stops[position.roundToInt()]) },
+            valueRange = 0f..stops.lastIndex.toFloat(),
+            steps = stops.size - 2,
+            colors = SliderDefaults.colors(
+                thumbColor = AppleTimerOrange,
+                activeTrackColor = AppleTimerOrange,
+                activeTickColor = DarkSurfaceVariant,
+                inactiveTrackColor = DarkBorder,
+                inactiveTickColor = TextMuted
+            ),
+            modifier = Modifier.testTag("fade_in_slider")
+        )
+    }
+}
+
+@Composable
+internal fun <T> SegmentRow(
     title: String,
-    options: List<Int>,
-    selected: Int,
-    optionLabel: (Int) -> String,
-    onSelect: (Int) -> Unit,
+    options: List<T>,
+    selected: T,
+    optionLabel: (T) -> String,
+    onSelect: (T) -> Unit,
     testTagPrefix: String
 ) {
     Row(

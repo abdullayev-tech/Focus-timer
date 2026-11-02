@@ -38,14 +38,13 @@ import com.example.ui.theme.CompletedRingArc
 import com.example.ui.theme.CompletedRingTrack
 import com.example.ui.theme.RunningRingArc
 import com.example.ui.theme.RunningRingTrack
-import com.example.ui.theme.StoppedRingArc
-import com.example.ui.theme.StoppedRingTrack
+import com.example.ui.theme.StoppedRingColor
 
 /**
  * Pure, simple Apple/Steve Jobs-style circular timer.
  * - No dots around the ring.
  * - Only the time numeral inside the ring.
- * - Stopped/Paused: Refined dark slate-blue tone.
+ * - Stopped/Paused: the colour picked on the dev screen.
  * - Running: Focused dark gray/silver tone.
  * - Tap directly on the circle to start / pause.
  */
@@ -56,6 +55,7 @@ fun SimpleFocusRing(
     isRunning: Boolean,
     isCompleted: Boolean,
     isAlerting: Boolean,
+    stoppedColor: StoppedRingColor,
     onTap: () -> Unit,
     modifier: Modifier = Modifier,
     size: Dp = 310.dp
@@ -64,13 +64,13 @@ fun SimpleFocusRing(
     val targetTrackColor = when {
         isCompleted -> CompletedRingTrack
         isRunning -> RunningRingTrack
-        else -> StoppedRingTrack
+        else -> stoppedColor.track
     }
 
     val targetArcColor = when {
         isCompleted -> CompletedRingArc
         isRunning -> RunningRingArc
-        else -> StoppedRingArc
+        else -> stoppedColor.arc
     }
 
     val animatedTrackColor by animateColorAsState(

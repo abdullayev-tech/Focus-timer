@@ -3,8 +3,10 @@ package com.example.data
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
+import com.example.audio.FADE_IN_STOPS
 import com.example.audio.GentleSoundMode
 import com.example.audio.GentleVibrationMode
+import com.example.ui.theme.StoppedRingColor
 
 class TimerPreferences(context: Context) {
     private val prefs: SharedPreferences =
@@ -17,6 +19,7 @@ class TimerPreferences(context: Context) {
         private const val KEY_VIBRATION_MODE = "pref_vibration_mode"
         private const val KEY_RINGTONE_URI = "pref_ringtone_uri"
         private const val KEY_AUTO_STOP_MINUTES = "pref_auto_stop_minutes"
+        private const val KEY_STOPPED_RING_COLOR = "pref_stopped_ring_color"
     }
 
     fun getSoundMode(): GentleSoundMode {
@@ -49,7 +52,8 @@ class TimerPreferences(context: Context) {
     }
 
     fun getCrescendoDuration(): Int {
-        return prefs.getInt(KEY_CRESCENDO_DURATION, 25)
+        // Coerced because "off" (0) used to be a choice
+        return prefs.getInt(KEY_CRESCENDO_DURATION, 25).coerceAtLeast(FADE_IN_STOPS.first())
     }
 
     fun setCrescendoDuration(seconds: Int) {
@@ -75,5 +79,14 @@ class TimerPreferences(context: Context) {
 
     fun setVibrationMode(mode: GentleVibrationMode) {
         prefs.edit().putString(KEY_VIBRATION_MODE, mode.name).apply()
+    }
+
+    fun getStoppedRingColor(): StoppedRingColor {
+        val savedName = prefs.getString(KEY_STOPPED_RING_COLOR, null)
+        return StoppedRingColor.values().firstOrNull { it.name == savedName } ?: StoppedRingColor.SLATE_BLUE
+    }
+
+    fun setStoppedRingColor(color: StoppedRingColor) {
+        prefs.edit().putString(KEY_STOPPED_RING_COLOR, color.name).apply()
     }
 }
