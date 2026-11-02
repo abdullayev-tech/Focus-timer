@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,13 +9,17 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -35,6 +40,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.audio.GentleSoundMode
 import com.example.ui.components.TimeWheelPicker
 import com.example.ui.theme.AppleTimerOrange
 import com.example.ui.theme.DarkBorder
@@ -47,8 +53,10 @@ import com.example.ui.theme.TextSecondary
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateTimerSheet(
+    defaultSound: GentleSoundMode,
+    onPreviewSound: (GentleSoundMode?) -> Unit,
     onDismiss: () -> Unit,
-    onCreateTimer: (label: String, totalSeconds: Long, autoStart: Boolean) -> Unit
+    onCreateTimer: (label: String, totalSeconds: Long, autoStart: Boolean, sound: GentleSoundMode?) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -57,6 +65,8 @@ fun CreateTimerSheet(
     var minutes by remember { mutableIntStateOf(2) }
     var seconds by remember { mutableIntStateOf(0) }
     var label by remember { mutableStateOf("Focus") }
+    var sound by remember { mutableStateOf<GentleSoundMode?>(null) }
+    var showSoundSheet by remember { mutableStateOf(false) }
 
     val totalSeconds = hours * 3600L + minutes * 60L + seconds
     val hasTime = totalSeconds > 0L
@@ -65,16 +75,7 @@ fun CreateTimerSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = DarkSurface,
-        dragHandle = {
-            Box(
-                modifier = Modifier
-                    .padding(vertical = 10.dp)
-                    .width(36.dp)
-                    .height(4.dp)
-                    .clip(CircleShape)
-                    .background(DarkBorder)
-            )
-        }
+        dragHandle = { SheetDragHandle() }
     ) {
         Column(
             modifier = Modifier
@@ -106,7 +107,7 @@ fun CreateTimerSheet(
 
                 TextButton(
                     onClick = {
-                        onCreateTimer(label, totalSeconds, false)
+                        onCreateTimer(label, totalSeconds, false, sound)
                         onDismiss()
                     },
                     enabled = hasTime,
@@ -155,11 +156,46 @@ fun CreateTimerSheet(
                     .testTag("timer_label_input")
             )
 
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // This timer's own sound
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(DarkSurfaceVariant)
+                    .clickable { showSoundSheet = true }
+                    .padding(start = 16.dp, end = 10.dp)
+                    .testTag("timer_sound_row"),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Sound",
+                    color = TextPrimary,
+                    fontSize = 16.sp
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = sound?.title ?: "Default",
+                        color = TextSecondary,
+                        fontSize = 14.sp
+                    )
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = TextMuted,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(20.dp))
 
             Button(
                 onClick = {
-                    onCreateTimer(label, totalSeconds, true)
+                    onCreateTimer(label, totalSeconds, true, sound)
                     onDismiss()
                 },
                 enabled = hasTime,
@@ -182,5 +218,17 @@ fun CreateTimerSheet(
                 )
             }
         }
+    }
+
+    if (showSoundSheet) {
+        TimerSoundSheet(
+            selected = sound,
+            defaultSound = defaultSound,
+            onSelect = {
+                sound = it
+                onPreviewSound(it)
+            },
+            onDismiss = { showSoundSheet = false }
+        )
     }
 }

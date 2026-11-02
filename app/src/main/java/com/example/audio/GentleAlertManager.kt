@@ -6,6 +6,7 @@ import android.media.AudioFormat
 import android.media.AudioTrack
 import android.media.MediaPlayer
 import android.media.RingtoneManager
+import android.net.Uri
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -21,14 +22,20 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.exp
+import kotlin.math.min
 import kotlin.math.sin
 
 enum class GentleSoundMode(val title: String) {
     AMBIENT_BREATHE("Ambient Breathe"),
-    OCEAN_TIDE("Ocean Tide"),
-    FOREST_MIST("Forest Mist"),
-    STELLAR_CALM("Stellar Calm"),
-    SYSTEM_GENTLE("System Sound")
+    CLOCK_TIMER("Clock Timer"),
+    BELL("Bell"),
+    MARIMBA("Marimba"),
+    SYSTEM_GENTLE("From Phone")
+}
+
+/** The sound with this saved name, or null for no name or a sound that no longer exists. */
+fun soundModeNamed(name: String?): GentleSoundMode? {
+    return GentleSoundMode.values().firstOrNull { it.name == name }
 }
 
 enum class GentleVibrationMode(val title: String) {
@@ -77,12 +84,22 @@ private const val VIBRATION_START_STRENGTH = 0.35f
 private const val SOUND_PREVIEW_MILLIS = 3400L
 private const val SOUND_PREVIEW_LEVEL = 0.6f
 
+// One group of the Clock Timer sound: quick bright pulses, then a rest
+private const val CLOCK_TIMER_PULSE_SECONDS = 0.14
+private const val CLOCK_TIMER_PULSE_COUNT = 8
+private const val CLOCK_TIMER_GROUP_SECONDS = 1.4f
+
+// One round of the Marimba sound
+private val MARIMBA_NOTES = listOf(523.25, 659.25, 783.99)
+private const val MARIMBA_NOTE_SECONDS = 0.18
+private const val MARIMBA_ROUND_SECONDS = 1.6f
+
 class GentleAlertManager(private val context: Context) {
     private val scope = CoroutineScope(Dispatchers.Default)
     private var alertJob: Job? = null
     private var hapticJob: Job? = null
     private var volumeJob: Job? = null
-    private var soundPreviewJob: Job? = null
+    private var autoStopJob: Job? = null
 
     private var mediaPlayer: MediaPlayer? = null
     private var audioTrack: AudioTrack? = null
@@ -97,47 +114,57 @@ class GentleAlertManager(private val context: Context) {
 
     // Sound and vibration configuration
     var soundMode: GentleSoundMode = GentleSoundMode.AMBIENT_BREATHE
-    var crescendoDurationSeconds: Int = 25
+    var crescendoDurationSeconds: Int = 25 // 0 means no fade-in: full level at once
+    var ringtoneUri: Uri? = null // The sound picked from the phone; null is its alarm sound
+    var autoStopMinutes: Int = 3 // The alert stops by itself after this long; 0 means never
     var maxVolume: Float = 0.65f // Share of the phone's alarm volume at the end of the fade-in
     var hapticsEnabled: Boolean = true
     var vibrationMode: GentleVibrationMode = GentleVibrationMode.SOFT_PULSE
 
-    fun startGentleAlert() {
+    fun startGentleAlert(mode: GentleSoundMode = soundMode) {
         if (_isAlerting.value) return
         stopAlert() // A sound preview may still be playing
         _isAlerting.value = true
         _currentVolume.value = 0f
 
-        startSound(isPreview = false)
+        startSound(mode, isPreview = false)
 
         if (hapticsEnabled) {
             startGentleHaptics()
         }
+
+        if (autoStopMinutes > 0) {
+            autoStopJob = scope.launch {
+                delay(autoStopMinutes * 60_000L)
+                stopAlert()
+            }
+        }
     }
 
-    fun previewSound() {
+    fun previewSound(mode: GentleSoundMode = soundMode) {
         stopAlert()
-        startSound(isPreview = true)
-        soundPreviewJob = scope.launch {
+        startSound(mode, isPreview = true)
+        autoStopJob = scope.launch {
             delay(SOUND_PREVIEW_MILLIS)
             stopAlert()
         }
     }
 
-    private fun startSound(isPreview: Boolean) {
-        when (soundMode) {
+    private fun startSound(mode: GentleSoundMode, isPreview: Boolean) {
+        when (mode) {
             GentleSoundMode.AMBIENT_BREATHE -> startSynthesizedAmbient(toneType = 1, isPreview = isPreview)
-            GentleSoundMode.OCEAN_TIDE -> startSynthesizedAmbient(toneType = 2, isPreview = isPreview)
-            GentleSoundMode.FOREST_MIST -> startSynthesizedAmbient(toneType = 3, isPreview = isPreview)
-            GentleSoundMode.STELLAR_CALM -> startSynthesizedAmbient(toneType = 4, isPreview = isPreview)
+            GentleSoundMode.CLOCK_TIMER -> startSynthesizedAmbient(toneType = 2, isPreview = isPreview)
+            GentleSoundMode.BELL -> startSynthesizedAmbient(toneType = 3, isPreview = isPreview)
+            GentleSoundMode.MARIMBA -> startSynthesizedAmbient(toneType = 4, isPreview = isPreview)
             GentleSoundMode.SYSTEM_GENTLE -> startSystemTone(isPreview)
         }
     }
 
     private fun startSystemTone(isPreview: Boolean) {
         try {
-            val alertUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+            val alertUri = ringtoneUri
                 ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
 
             mediaPlayer = MediaPlayer().apply {
                 setDataSource(context, alertUri)
@@ -148,13 +175,21 @@ class GentleAlertManager(private val context: Context) {
                         .build()
                 )
                 isLooping = true
-                val startVolume = if (isPreview) SOUND_PREVIEW_LEVEL * maxVolume else 0.001f
+                val startVolume = when {
+                    isPreview -> SOUND_PREVIEW_LEVEL * maxVolume
+                    crescendoDurationSeconds == 0 -> maxVolume
+                    else -> 0.001f
+                }
                 setVolume(startVolume, startVolume)
                 prepare()
                 start()
             }
 
             if (isPreview) return
+            if (crescendoDurationSeconds == 0) {
+                _currentVolume.value = 1f
+                return
+            }
 
             volumeJob = scope.launch {
                 val steps = crescendoDurationSeconds * 2
@@ -215,10 +250,10 @@ class GentleAlertManager(private val context: Context) {
                 val elapsed = System.currentTimeMillis() - startTime
                 val progress = (elapsed.toFloat() / totalRampMillis).coerceIn(0f, 1.0f)
                 // Quadratic curve (progress^2): starts at true whisper quiet and increases very slowly
-                val rampFactor = if (isPreview) {
-                    SOUND_PREVIEW_LEVEL
-                } else {
-                    (progress * progress).coerceIn(0.003f, 1.0f)
+                val rampFactor = when {
+                    isPreview -> SOUND_PREVIEW_LEVEL
+                    crescendoDurationSeconds == 0 -> 1f
+                    else -> (progress * progress).coerceIn(0.003f, 1.0f)
                 }
                 val currentVol = rampFactor * maxVolume
                 if (!isPreview) _currentVolume.value = rampFactor
@@ -238,7 +273,11 @@ class GentleAlertManager(private val context: Context) {
         toneType: Int,
         volume: Float
     ): ShortArray {
-        val durationSec = 3.2f
+        val durationSec = when (toneType) {
+            2 -> CLOCK_TIMER_GROUP_SECONDS
+            4 -> MARIMBA_ROUND_SECONDS
+            else -> 3.2f
+        }
         val numSamples = (durationSec * sampleRate).toInt()
         val buffer = ShortArray(numSamples)
 
@@ -264,29 +303,43 @@ class GentleAlertManager(private val context: Context) {
                     (wave + sub + harmonic) * envelope * breath
                 }
                 2 -> {
-                    // OCEAN_TIDE: Deep warm 174 Hz Solfeggio frequency + 261 Hz rolling tide swell
-                    val baseFreq = 174.0
-                    val tide = (sin(2 * PI * 0.32 * t) + 1.0) / 2.0
-                    val deepWave = sin(2 * PI * baseFreq * t)
-                    val overtoneWave = 0.35 * sin(2 * PI * (baseFreq * 1.5) * t)
-                    (deepWave + overtoneWave) * envelope * tide
+                    // CLOCK_TIMER: quick bright pulses on two alternating notes, like a phone's clock timer
+                    val pulse = (t / CLOCK_TIMER_PULSE_SECONDS).toInt()
+                    if (pulse >= CLOCK_TIMER_PULSE_COUNT) {
+                        0.0
+                    } else {
+                        val pulseTime = t - pulse * CLOCK_TIMER_PULSE_SECONDS
+                        val freq = if (pulse % 2 == 0) 1568.0 else 1976.0
+                        // 3ms rise and a fast decay, so each pulse is crisp but never clicks
+                        val pulseEnvelope = min(1.0, pulseTime / 0.003) * exp(-pulseTime * 28.0)
+                        val wave = sin(2 * PI * freq * pulseTime)
+                        val overtone = 0.3 * sin(2 * PI * (freq * 2.0) * pulseTime)
+                        (wave + overtone) / 1.3 * pulseEnvelope
+                    }
                 }
                 3 -> {
-                    // FOREST_MIST: Serene organic dual harmonic pulse (216 Hz & 324 Hz) with slow phase drift
-                    val freq1 = 216.0
-                    val freq2 = 324.0
-                    val wave1 = sin(2 * PI * freq1 * t)
-                    val wave2 = sin(2 * PI * (freq2 + 0.5) * t) * 0.55
-                    val drift = (sin(2 * PI * 0.38 * t) + 1.0) / 2.0
-                    (wave1 + wave2) * envelope * drift
+                    // BELL: one struck note whose higher partials die away first, like a real bell
+                    val freq = 523.25
+                    val strike = min(1.0, t / 0.002)
+                    val partials = exp(-t * 1.1) * sin(2 * PI * freq * t) +
+                        0.5 * exp(-t * 1.8) * sin(2 * PI * (freq * 2.0) * t) +
+                        0.25 * exp(-t * 2.8) * sin(2 * PI * (freq * 2.76) * t) +
+                        0.1 * exp(-t * 5.0) * sin(2 * PI * (freq * 5.4) * t)
+                    partials / 1.85 * strike
                 }
                 else -> {
-                    // STELLAR_CALM: Soft ambient chord pad (240 Hz, 300 Hz, 360 Hz) warm floating swell
-                    val w1 = sin(2 * PI * 240.0 * t)
-                    val w2 = sin(2 * PI * 300.0 * t) * 0.5
-                    val w3 = sin(2 * PI * 360.0 * t) * 0.4
-                    val padBreath = (sin(2 * PI * 0.35 * t) + 1.0) / 2.0
-                    (w1 + w2 + w3) / 1.7 * envelope * padBreath
+                    // MARIMBA: three rising wooden notes that ring into each other
+                    var notes = 0.0
+                    MARIMBA_NOTES.forEachIndexed { index, freq ->
+                        val noteTime = t - index * MARIMBA_NOTE_SECONDS
+                        if (noteTime >= 0.0) {
+                            val strike = min(1.0, noteTime / 0.002)
+                            val wave = sin(2 * PI * freq * noteTime)
+                            val overtone = 0.25 * sin(2 * PI * (freq * 4.0) * noteTime)
+                            notes += (wave + overtone) * strike * exp(-noteTime * 9.0)
+                        }
+                    }
+                    notes / 1.5
                 }
             }
 
@@ -378,8 +431,8 @@ class GentleAlertManager(private val context: Context) {
         volumeJob?.cancel()
         volumeJob = null
 
-        soundPreviewJob?.cancel()
-        soundPreviewJob = null
+        autoStopJob?.cancel()
+        autoStopJob = null
 
         hapticJob?.cancel()
         hapticJob = null

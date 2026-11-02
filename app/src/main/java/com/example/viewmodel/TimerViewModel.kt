@@ -1,11 +1,13 @@
 package com.example.viewmodel
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.audio.GentleAlertManager
 import com.example.audio.GentleSoundMode
 import com.example.audio.GentleVibrationMode
+import com.example.audio.soundModeNamed
 import com.example.data.TimerDatabase
 import com.example.data.TimerEntity
 import com.example.data.TimerPreferences
@@ -37,18 +39,23 @@ data class ActiveTimerState(
         } else 0f
 
     fun formattedRemaining(): String {
-        // Past zero the clock keeps going as negative time, showing how long ago time was up
-        val isOvertime = remainingMillis < 0L
-        val s = if (isOvertime) -remainingMillis / 1000L else (remainingMillis + 999L) / 1000L
+        return formatClock((remainingMillis.coerceAtLeast(0L) + 999L) / 1000L)
+    }
+
+    // How long ago time was up; null until then
+    fun formattedOvertime(): String? {
+        return if (isCompleted) formatClock(-remainingMillis / 1000L) else null
+    }
+
+    private fun formatClock(s: Long): String {
         val hours = s / 3600
         val minutes = (s % 3600) / 60
         val seconds = s % 60
-        val clock = if (hours > 0) {
+        return if (hours > 0) {
             String.format("%02d:%02d:%02d", hours, minutes, seconds)
         } else {
             String.format("%02d:%02d", minutes, seconds)
         }
-        return if (isOvertime && s > 0L) "\u2212$clock" else clock
     }
 }
 
@@ -77,6 +84,12 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     private val _vibrationMode = MutableStateFlow(prefs.getVibrationMode())
     val vibrationMode: StateFlow<GentleVibrationMode> = _vibrationMode.asStateFlow()
 
+    private val _ringtoneUri = MutableStateFlow(prefs.getRingtoneUri())
+    val ringtoneUri: StateFlow<Uri?> = _ringtoneUri.asStateFlow()
+
+    private val _autoStopMinutes = MutableStateFlow(prefs.getAutoStopMinutes())
+    val autoStopMinutes: StateFlow<Int> = _autoStopMinutes.asStateFlow()
+
     private var countdownJob: Job? = null
     private var lastTickTime: Long = 0L
 
@@ -86,6 +99,8 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         alertManager.crescendoDurationSeconds = _crescendoDuration.value
         alertManager.hapticsEnabled = _hapticsEnabled.value
         alertManager.vibrationMode = _vibrationMode.value
+        alertManager.ringtoneUri = _ringtoneUri.value
+        alertManager.autoStopMinutes = _autoStopMinutes.value
 
         val dao = TimerDatabase.getDatabase(application).timerDao()
         repository = TimerRepository(dao)
@@ -157,7 +172,9 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
                     isCompleted = updatedMillis <= 0L
                 )
                 if (justFinished) {
-                    alertManager.startGentleAlert()
+                    // The timer's own sound if it has one, otherwise the default from settings
+                    val timerSound = soundModeNamed(_activeState.value.timerEntity?.soundName)
+                    alertManager.startGentleAlert(timerSound ?: _selectedSoundMode.value)
                     // The focus screen is where the alert can be silenced
                     _isFullScreen.value = true
                 }
@@ -196,13 +213,19 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         alertManager.stopAlert()
     }
 
-    fun createTimer(label: String, totalSeconds: Long, autoOpen: Boolean = true) {
+    fun createTimer(
+        label: String,
+        totalSeconds: Long,
+        autoOpen: Boolean = true,
+        sound: GentleSoundMode? = null
+    ) {
         viewModelScope.launch {
             val maxOrder = timers.value.maxOfOrNull { it.displayOrder } ?: -1
             val newTimer = TimerEntity(
                 label = label.ifBlank { "Focus Block" },
                 totalSeconds = totalSeconds,
-                displayOrder = maxOrder + 1
+                displayOrder = maxOrder + 1,
+                soundName = sound?.name
             )
             val id = repository.insert(newTimer)
             if (autoOpen) {
@@ -210,6 +233,22 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
                 openTimer(savedTimer, autoStart = true)
             }
         }
+    }
+
+    /** Gives the open timer its own sound; null goes back to the default from settings. */
+    fun setActiveTimerSound(sound: GentleSoundMode?) {
+        val timer = _activeState.value.timerEntity ?: return
+        _activeState.value = _activeState.value.copy(
+            timerEntity = timer.copy(soundName = sound?.name)
+        )
+        viewModelScope.launch {
+            repository.updateSound(timer.id, sound?.name)
+        }
+        previewSound(sound)
+    }
+
+    fun previewSound(sound: GentleSoundMode?) {
+        alertManager.previewSound(sound ?: _selectedSoundMode.value)
     }
 
     fun saveTimerOrder(ordered: List<TimerEntity>) {
@@ -236,6 +275,19 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         alertManager.soundMode = mode
         prefs.setSoundMode(mode)
         alertManager.previewSound()
+    }
+
+    fun updateRingtone(uri: Uri) {
+        _ringtoneUri.value = uri
+        alertManager.ringtoneUri = uri
+        prefs.setRingtoneUri(uri)
+        updateSoundMode(GentleSoundMode.SYSTEM_GENTLE)
+    }
+
+    fun updateAutoStopMinutes(minutes: Int) {
+        _autoStopMinutes.value = minutes
+        alertManager.autoStopMinutes = minutes
+        prefs.setAutoStopMinutes(minutes)
     }
 
     fun updateCrescendoDuration(seconds: Int) {

@@ -4,8 +4,7 @@ import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,7 +26,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -53,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import com.example.audio.soundModeNamed
 import com.example.data.TimerEntity
 import com.example.ui.components.TimerReorderState
 import com.example.ui.theme.AppleTimerOrange
@@ -212,15 +211,15 @@ fun TimerListScreen(
                                 timer = timer,
                                 runningTimeText = runningTimeText.takeIf { timer.id == runningTimerId },
                                 isDragged = isDragged,
-                                showDragHandle = reorder.items.size > 1,
-                                onClick = { onTimerSelect(timer) },
+                                // Letting go of a held card must not also tap what's under the finger
+                                onClick = { if (reorder.draggedId == null) onTimerSelect(timer) },
                                 onDragStart = {
                                     view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                                     reorder.start(timer.id)
                                 },
                                 onDrag = { deltaY -> reorder.drag(deltaY) },
                                 onDragEnd = { reorder.end() },
-                                onDelete = { onDeleteTimer(timer) },
+                                onDelete = { if (reorder.draggedId == null) onDeleteTimer(timer) },
                                 modifier = if (isDragged) {
                                     // The held card follows the finger and floats above the others
                                     Modifier
@@ -248,7 +247,6 @@ fun TimerRowCard(
     timer: TimerEntity,
     runningTimeText: String?,
     isDragged: Boolean,
-    showDragHandle: Boolean,
     onClick: () -> Unit,
     onDragStart: () -> Unit,
     onDrag: (deltaY: Float) -> Unit,
@@ -273,53 +271,29 @@ fun TimerRowCard(
                 RoundedCornerShape(16.dp)
             )
             .clip(RoundedCornerShape(16.dp))
+            // Press and hold a card to pick it up
+            .pointerInput(timer.id) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { onDragStart() },
+                    onDragEnd = { onDragEnd() },
+                    onDragCancel = { onDragEnd() },
+                    onDrag = { _, dragAmount -> onDrag(dragAmount.y) }
+                )
+            }
             .clickable(onClick = onClick)
             .testTag("timer_card_${timer.id}")
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = if (showDragHandle) 6.dp else 18.dp, end = 18.dp)
-                .padding(vertical = 16.dp),
+                .padding(horizontal = 18.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // On the side away from delete, so reaching for one never hits the other
-            if (showDragHandle) {
-                Box(
-                    modifier = Modifier
-                        .size(width = 44.dp, height = 56.dp)
-                        .pointerInput(timer.id) {
-                            detectVerticalDragGestures(
-                                onDragStart = { onDragStart() },
-                                onDragEnd = { onDragEnd() },
-                                onDragCancel = { onDragEnd() },
-                                onVerticalDrag = { change, deltaY ->
-                                    change.consume()
-                                    onDrag(deltaY)
-                                }
-                            )
-                        }
-                        // Swallows taps, so a missed drag doesn't open the timer
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) { }
-                        .testTag("drag_handle_${timer.id}"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.DragHandle,
-                        contentDescription = "Drag to reorder",
-                        tint = if (isDragged) BrightWhite else TextMuted,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-            }
-
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = timer.label,
+                    // A timer with its own sound says so
+                    text = soundModeNamed(timer.soundName)?.let { "${timer.label} \u00B7 ${it.title}" } ?: timer.label,
                     color = TextSecondary,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium

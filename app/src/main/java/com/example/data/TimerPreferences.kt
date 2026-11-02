@@ -2,6 +2,7 @@ package com.example.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.net.Uri
 import com.example.audio.GentleSoundMode
 import com.example.audio.GentleVibrationMode
 
@@ -14,6 +15,8 @@ class TimerPreferences(context: Context) {
         private const val KEY_CRESCENDO_DURATION = "pref_crescendo_duration"
         private const val KEY_HAPTICS_ENABLED = "pref_haptics_enabled"
         private const val KEY_VIBRATION_MODE = "pref_vibration_mode"
+        private const val KEY_RINGTONE_URI = "pref_ringtone_uri"
+        private const val KEY_AUTO_STOP_MINUTES = "pref_auto_stop_minutes"
     }
 
     fun getSoundMode(): GentleSoundMode {
@@ -27,6 +30,22 @@ class TimerPreferences(context: Context) {
 
     fun setSoundMode(mode: GentleSoundMode) {
         prefs.edit().putString(KEY_SOUND_MODE, mode.name).apply()
+    }
+
+    fun getRingtoneUri(): Uri? {
+        return prefs.getString(KEY_RINGTONE_URI, null)?.let { Uri.parse(it) }
+    }
+
+    fun setRingtoneUri(uri: Uri) {
+        prefs.edit().putString(KEY_RINGTONE_URI, uri.toString()).apply()
+    }
+
+    fun getAutoStopMinutes(): Int {
+        return prefs.getInt(KEY_AUTO_STOP_MINUTES, 3)
+    }
+
+    fun setAutoStopMinutes(minutes: Int) {
+        prefs.edit().putInt(KEY_AUTO_STOP_MINUTES, minutes).apply()
     }
 
     fun getCrescendoDuration(): Int {

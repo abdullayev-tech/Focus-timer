@@ -9,18 +9,26 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,7 +37,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.audio.GentleSoundMode
+import com.example.audio.soundModeNamed
 import com.example.ui.components.SimpleFocusRing
+import com.example.ui.theme.CompletedRingArc
 import com.example.ui.theme.DarkSurfaceVariant
 import com.example.ui.theme.OLEDBlack
 import com.example.ui.theme.TextPrimary
@@ -44,9 +55,13 @@ fun FocusTimerScreen(
     onTogglePlayPause: () -> Unit,
     onReset: () -> Unit,
     onSilenceAlert: () -> Unit,
+    defaultSound: GentleSoundMode,
+    onSelectSound: (GentleSoundMode?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val view = LocalView.current
+    val timerSound = soundModeNamed(state.timerEntity?.soundName)
+    var showSoundSheet by remember { mutableStateOf(false) }
 
     // Handle system back navigation
     BackHandler {
@@ -54,7 +69,7 @@ fun FocusTimerScreen(
     }
 
     // When time is up:
-    // Tap 1 (when alert sounding): stops the alert; the clock keeps counting negative time
+    // Tap 1 (when alert sounding): stops the alert; "Over by" in the corner keeps counting
     // Tap 2: resets to the actual time, ready to run
     // Tap 3: immediately starts the timer
     fun handleTap() {
@@ -100,6 +115,32 @@ fun FocusTimerScreen(
             )
         }
 
+        // Once time is up: how long ago, in the corner. The main clock stays at zero
+        val overtime = state.formattedOvertime()
+        AnimatedVisibility(
+            visible = overtime != null,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(16.dp)
+        ) {
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = "Over by",
+                    color = TextSecondary,
+                    fontSize = 13.sp
+                )
+                Text(
+                    text = overtime.orEmpty(),
+                    color = CompletedRingArc,
+                    fontSize = 26.sp,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.testTag("overtime_display")
+                )
+            }
+        }
+
         // Center Stage: Pure clean circular ring showing actual time
         Box(
             modifier = Modifier.align(Alignment.Center),
@@ -114,6 +155,39 @@ fun FocusTimerScreen(
                 onTap = { handleTap() },
                 size = 320.dp
             )
+        }
+
+        // This timer's sound can be changed while the clock is stopped; it's gone while it runs
+        AnimatedVisibility(
+            visible = !state.isRunning && !state.isCompleted && !isAlerting,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 48.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(DarkSurfaceVariant)
+                    .clickable { showSoundSheet = true }
+                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                    .testTag("focus_sound_button"),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MusicNote,
+                    contentDescription = null,
+                    tint = TextSecondary,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = timerSound?.title ?: "Default sound",
+                    color = TextSecondary,
+                    fontSize = 14.sp
+                )
+            }
         }
 
         // Subtle prompt once time is up
@@ -133,5 +207,14 @@ fun FocusTimerScreen(
                 modifier = Modifier.testTag("silence_alert_hint")
             )
         }
+    }
+
+    if (showSoundSheet) {
+        TimerSoundSheet(
+            selected = timerSound,
+            defaultSound = defaultSound,
+            onSelect = onSelectSound,
+            onDismiss = { showSoundSheet = false }
+        )
     }
 }

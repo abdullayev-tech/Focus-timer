@@ -64,13 +64,16 @@ fun TimerApp(viewModel: TimerViewModel) {
     val crescendoDuration by viewModel.crescendoDuration.collectAsState()
     val hapticsEnabled by viewModel.hapticsEnabled.collectAsState()
     val vibrationMode by viewModel.vibrationMode.collectAsState()
+    val ringtoneUri by viewModel.ringtoneUri.collectAsState()
+    val autoStopMinutes by viewModel.autoStopMinutes.collectAsState()
 
     var showCreateSheet by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
 
-    // Keep the screen awake while the clock runs and while the alert sounds
+    // Keep the screen awake while the clock runs and while the alert sounds.
+    // Once the alert has stopped it can sleep, or a timer left alone would hold it on forever
     val view = LocalView.current
-    val keepAwake = activeState.isRunning || isAlerting
+    val keepAwake = (activeState.isRunning && !activeState.isCompleted) || isAlerting
     DisposableEffect(view, keepAwake) {
         view.keepScreenOn = keepAwake
         onDispose { view.keepScreenOn = false }
@@ -95,7 +98,9 @@ fun TimerApp(viewModel: TimerViewModel) {
                     onBack = { viewModel.closeFullScreen() },
                     onTogglePlayPause = { viewModel.togglePlayPause() },
                     onReset = { viewModel.resetTimer() },
-                    onSilenceAlert = { viewModel.silenceAlert() }
+                    onSilenceAlert = { viewModel.silenceAlert() },
+                    defaultSound = soundMode,
+                    onSelectSound = { viewModel.setActiveTimerSound(it) }
                 )
             } else {
                 TimerListScreen(
@@ -114,9 +119,11 @@ fun TimerApp(viewModel: TimerViewModel) {
         // Create Timer Sheet
         if (showCreateSheet) {
             CreateTimerSheet(
+                defaultSound = soundMode,
+                onPreviewSound = { viewModel.previewSound(it) },
                 onDismiss = { showCreateSheet = false },
-                onCreateTimer = { label, totalSeconds, autoStart ->
-                    viewModel.createTimer(label, totalSeconds, autoOpen = autoStart)
+                onCreateTimer = { label, totalSeconds, autoStart, sound ->
+                    viewModel.createTimer(label, totalSeconds, autoOpen = autoStart, sound = sound)
                 }
             )
         }
@@ -128,9 +135,13 @@ fun TimerApp(viewModel: TimerViewModel) {
                 crescendoDuration = crescendoDuration,
                 hapticsEnabled = hapticsEnabled,
                 vibrationMode = vibrationMode,
+                ringtoneUri = ringtoneUri,
+                autoStopMinutes = autoStopMinutes,
                 isTestingAlert = isAlerting,
                 testVolume = alertVolume,
                 onSelectMode = { viewModel.updateSoundMode(it) },
+                onPickRingtone = { viewModel.updateRingtone(it) },
+                onSelectAutoStop = { viewModel.updateAutoStopMinutes(it) },
                 onSelectCrescendoDuration = { viewModel.updateCrescendoDuration(it) },
                 onToggleHaptics = { viewModel.updateHapticsEnabled(it) },
                 onSelectVibrationMode = { viewModel.updateVibrationMode(it) },

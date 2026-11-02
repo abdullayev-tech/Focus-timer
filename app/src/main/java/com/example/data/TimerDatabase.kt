@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [TimerEntity::class], version = 2, exportSchema = false)
+@Database(entities = [TimerEntity::class], version = 3, exportSchema = false)
 abstract class TimerDatabase : RoomDatabase() {
     abstract fun timerDao(): TimerDao
 
@@ -21,6 +21,12 @@ abstract class TimerDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE timers ADD COLUMN soundName TEXT")
+            }
+        }
+
         fun getDatabase(context: Context): TimerDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -28,7 +34,7 @@ abstract class TimerDatabase : RoomDatabase() {
                     TimerDatabase::class.java,
                     "focus_timer_database"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

@@ -22,6 +22,9 @@ interface TimerDao {
     @Update
     suspend fun updateTimers(timers: List<TimerEntity>)
 
+    @Query("UPDATE timers SET soundName = :soundName WHERE id = :id")
+    suspend fun updateSound(id: Long, soundName: String?)
+
     @Delete
     suspend fun deleteTimer(timer: TimerEntity)
 

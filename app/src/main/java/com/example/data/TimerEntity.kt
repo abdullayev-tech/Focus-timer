@@ -10,7 +10,8 @@ data class TimerEntity(
     val label: String,
     val totalSeconds: Long,
     val displayOrder: Int = 0,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val soundName: String? = null // This timer's own sound; null uses the default from settings
 ) {
     fun formattedDuration(): String {
         val hours = totalSeconds / 3600

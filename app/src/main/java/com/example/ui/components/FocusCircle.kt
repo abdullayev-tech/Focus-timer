@@ -154,8 +154,7 @@ fun SimpleFocusRing(
         Text(
             text = timeText,
             color = if (isCompleted) CompletedRingArc else BrightWhite,
-            // The minus sign doesn't count, so the numbers don't shrink when time runs out
-            fontSize = if (timeText.removePrefix("\u2212").length > 5) 44.sp else 58.sp,
+            fontSize = if (timeText.length > 5) 44.sp else 58.sp,
             fontWeight = FontWeight.ExtraLight,
             fontFamily = FontFamily.Monospace,
             letterSpacing = 1.sp,
