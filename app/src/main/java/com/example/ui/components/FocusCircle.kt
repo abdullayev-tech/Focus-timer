@@ -55,6 +55,7 @@ fun SimpleFocusRing(
     timeText: String,
     isRunning: Boolean,
     isCompleted: Boolean,
+    isAlerting: Boolean,
     onTap: () -> Unit,
     modifier: Modifier = Modifier,
     size: Dp = 310.dp
@@ -90,7 +91,7 @@ fun SimpleFocusRing(
         label = "progress"
     )
 
-    // Gentle calm breathing pulse when time is completed
+    // Gentle calm breathing pulse while the alert sounds
     val infiniteTransition = rememberInfiniteTransition(label = "completedGlow")
     val completionPulse by infiniteTransition.animateFloat(
         initialValue = 0.5f,
@@ -131,7 +132,7 @@ fun SimpleFocusRing(
             // 2. Sweeping progress arc
             val sweep = 360f * animatedProgress
             if (sweep > 0.5f) {
-                val effectiveArcColor = if (isCompleted) {
+                val effectiveArcColor = if (isAlerting) {
                     animatedArcColor.copy(alpha = completionPulse)
                 } else {
                     animatedArcColor
@@ -153,7 +154,8 @@ fun SimpleFocusRing(
         Text(
             text = timeText,
             color = if (isCompleted) CompletedRingArc else BrightWhite,
-            fontSize = if (timeText.length > 5) 44.sp else 58.sp,
+            // The minus sign doesn't count, so the numbers don't shrink when time runs out
+            fontSize = if (timeText.removePrefix("\u2212").length > 5) 44.sp else 58.sp,
             fontWeight = FontWeight.ExtraLight,
             fontFamily = FontFamily.Monospace,
             letterSpacing = 1.sp,

@@ -46,11 +46,11 @@ class TimerPreferences(context: Context) {
     }
 
     fun getVibrationMode(): GentleVibrationMode {
-        val savedName = prefs.getString(KEY_VIBRATION_MODE, GentleVibrationMode.SUBTLE_WHISPER.name)
+        val savedName = prefs.getString(KEY_VIBRATION_MODE, GentleVibrationMode.SOFT_PULSE.name)
         return try {
-            GentleVibrationMode.valueOf(savedName ?: GentleVibrationMode.SUBTLE_WHISPER.name)
+            GentleVibrationMode.valueOf(savedName ?: GentleVibrationMode.SOFT_PULSE.name)
         } catch (e: Exception) {
-            GentleVibrationMode.SUBTLE_WHISPER
+            GentleVibrationMode.SOFT_PULSE
         }
     }
 

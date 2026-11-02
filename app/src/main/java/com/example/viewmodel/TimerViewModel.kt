@@ -27,14 +27,6 @@ data class ActiveTimerState(
     val isRunning: Boolean = false,
     val isCompleted: Boolean = false
 ) {
-    // When completed or at zero, show the configured actual timer duration instead of 00:00
-    val remainingSeconds: Long
-        get() = if (isCompleted || (remainingMillis <= 0L && totalSeconds > 0L)) {
-            totalSeconds
-        } else {
-            (remainingMillis + 999L) / 1000L
-        }
-
     val progress: Float
         get() = if (totalSeconds > 0) {
             if (isCompleted) {
@@ -45,15 +37,18 @@ data class ActiveTimerState(
         } else 0f
 
     fun formattedRemaining(): String {
-        val s = remainingSeconds
+        // Past zero the clock keeps going as negative time, showing how long ago time was up
+        val isOvertime = remainingMillis < 0L
+        val s = if (isOvertime) -remainingMillis / 1000L else (remainingMillis + 999L) / 1000L
         val hours = s / 3600
         val minutes = (s % 3600) / 60
         val seconds = s % 60
-        return if (hours > 0) {
+        val clock = if (hours > 0) {
             String.format("%02d:%02d:%02d", hours, minutes, seconds)
         } else {
             String.format("%02d:%02d", minutes, seconds)
         }
+        return if (isOvertime && s > 0L) "\u2212$clock" else clock
     }
 }
 
@@ -102,6 +97,13 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun openTimer(timer: TimerEntity, autoStart: Boolean = false) {
+        // Its session is still running: go back to it, don't restart it
+        val current = _activeState.value
+        if (current.isRunning && current.timerEntity?.id == timer.id) {
+            _isFullScreen.value = true
+            return
+        }
+
         countdownJob?.cancel()
         _activeState.value = ActiveTimerState(
             timerEntity = timer,
@@ -116,9 +118,11 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Leaving a running session keeps it going; leaving a paused or finished one ends it. */
     fun closeFullScreen() {
-        if (alertManager.isAlerting.value) {
-            dismissAlert()
+        val current = _activeState.value
+        if (!current.isRunning || current.isCompleted) {
+            resetTimer()
         }
         _isFullScreen.value = false
     }
@@ -133,9 +137,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
 
-        if (alertManager.isAlerting.value) {
-            dismissAlert()
-        }
+        silenceAlert()
 
         _activeState.value = _activeState.value.copy(isRunning = true, isCompleted = false)
         lastTickTime = System.currentTimeMillis()
@@ -149,18 +151,15 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
                 lastTickTime = now
 
                 val updatedMillis = _activeState.value.remainingMillis - delta
-                if (updatedMillis <= 0L) {
-                    _activeState.value = _activeState.value.copy(
-                        remainingMillis = 0L,
-                        isRunning = false,
-                        isCompleted = true
-                    )
+                val justFinished = updatedMillis <= 0L && !_activeState.value.isCompleted
+                _activeState.value = _activeState.value.copy(
+                    remainingMillis = updatedMillis,
+                    isCompleted = updatedMillis <= 0L
+                )
+                if (justFinished) {
                     alertManager.startGentleAlert()
-                    break
-                } else {
-                    _activeState.value = _activeState.value.copy(
-                        remainingMillis = updatedMillis
-                    )
+                    // The focus screen is where the alert can be silenced
+                    _isFullScreen.value = true
                 }
             }
         }
@@ -192,18 +191,9 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    /**
-     * Dismisses the alert and directly resets the timer to the full duration,
-     * showing the actual time and allowing the very next tap to immediately start.
-     */
-    fun dismissAlert() {
+    /** Stops the sound and vibration only. Past zero, the clock keeps counting. */
+    fun silenceAlert() {
         alertManager.stopAlert()
-        val current = _activeState.value
-        _activeState.value = current.copy(
-            remainingMillis = current.totalSeconds * 1000L,
-            isRunning = false,
-            isCompleted = false
-        )
     }
 
     fun createTimer(label: String, totalSeconds: Long, autoOpen: Boolean = true) {
@@ -217,17 +207,13 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             val id = repository.insert(newTimer)
             if (autoOpen) {
                 val savedTimer = newTimer.copy(id = id)
-                openTimer(savedTimer, autoStart = false)
+                openTimer(savedTimer, autoStart = true)
             }
         }
     }
 
-    fun reorderTimers(fromIndex: Int, toIndex: Int) {
-        val current = timers.value.toMutableList()
-        if (fromIndex !in current.indices || toIndex !in current.indices || fromIndex == toIndex) return
-        val item = current.removeAt(fromIndex)
-        current.add(toIndex, item)
-        val reordered = current.mapIndexed { index, timer ->
+    fun saveTimerOrder(ordered: List<TimerEntity>) {
+        val reordered = ordered.mapIndexed { index, timer ->
             timer.copy(displayOrder = index)
         }
         viewModelScope.launch {
@@ -238,6 +224,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteTimer(timer: TimerEntity) {
         viewModelScope.launch {
             if (_activeState.value.timerEntity?.id == timer.id) {
+                resetTimer()
                 closeFullScreen()
             }
             repository.delete(timer)
@@ -248,6 +235,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         _selectedSoundMode.value = mode
         alertManager.soundMode = mode
         prefs.setSoundMode(mode)
+        alertManager.previewSound()
     }
 
     fun updateCrescendoDuration(seconds: Int) {

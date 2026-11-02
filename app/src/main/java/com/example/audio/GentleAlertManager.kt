@@ -23,26 +23,66 @@ import kotlin.math.PI
 import kotlin.math.exp
 import kotlin.math.sin
 
-enum class GentleSoundMode(val title: String, val description: String) {
-    AMBIENT_BREATHE("Ambient Breathe", "Low soothing sine wave pulse with gradual swell"),
-    OCEAN_TIDE("Ocean Tide", "Ultra-deep warm swell rolling in like calm water"),
-    FOREST_MIST("Forest Mist", "Serene dual-tone harmonic pulse, soft and organic"),
-    STELLAR_CALM("Stellar Calm", "Gentle floating pad with warm meditative breath"),
-    SYSTEM_GENTLE("System Notification", "Default system tone with gradual volume fade-in")
+enum class GentleSoundMode(val title: String) {
+    AMBIENT_BREATHE("Ambient Breathe"),
+    OCEAN_TIDE("Ocean Tide"),
+    FOREST_MIST("Forest Mist"),
+    STELLAR_CALM("Stellar Calm"),
+    SYSTEM_GENTLE("System Sound")
 }
 
-enum class GentleVibrationMode(val title: String, val description: String) {
-    SUBTLE_WHISPER("Subtle Whisper", "Delicate micro-pulse, extremely soft and gentle"),
-    CALM_HEARTBEAT("Resting Heartbeat", "Slow, quiet double pulse with spacious pause"),
-    BREATHING_WAVE("Slow Breath Wave", "Tiny rising and relaxing vibration"),
-    FEATHER_TICK("Feather Touch", "Barely perceptible gentle haptic tick")
+enum class GentleVibrationMode(val title: String) {
+    SOFT_PULSE("Soft Pulse"),
+    HEARTBEAT("Heartbeat"),
+    WAVE("Wave")
 }
+
+/**
+ * One repeat of a vibration.
+ * - [timings] and [strengths] go together, step by step; a strength of 0 is a rest.
+ * - [plainTimings] is off, on, off, on... for phones whose motor has no strength control.
+ */
+private class VibrationPattern(
+    val timings: LongArray,
+    val strengths: FloatArray,
+    val plainTimings: LongArray,
+    val pauseMillis: Long
+)
+
+private fun GentleVibrationMode.pattern(): VibrationPattern = when (this) {
+    GentleVibrationMode.SOFT_PULSE -> VibrationPattern(
+        timings = longArrayOf(120, 240, 120),
+        strengths = floatArrayOf(0.45f, 1f, 0.45f),
+        plainTimings = longArrayOf(0, 300),
+        pauseMillis = 1500
+    )
+    GentleVibrationMode.HEARTBEAT -> VibrationPattern(
+        timings = longArrayOf(90, 130, 120),
+        strengths = floatArrayOf(1f, 0f, 0.7f),
+        plainTimings = longArrayOf(0, 90, 130, 120),
+        pauseMillis = 1400
+    )
+    GentleVibrationMode.WAVE -> VibrationPattern(
+        timings = LongArray(11) { 100L },
+        strengths = floatArrayOf(0.15f, 0.3f, 0.5f, 0.7f, 0.9f, 1f, 0.9f, 0.7f, 0.5f, 0.3f, 0.15f),
+        plainTimings = longArrayOf(0, 120, 100, 200, 100, 320, 100, 200, 100, 120),
+        pauseMillis = 1000
+    )
+}
+
+// Where the vibration starts, as a share of full strength, before it rises with the sound
+private const val VIBRATION_START_STRENGTH = 0.35f
+
+// Tapping a sound plays one swell of it, below full level so a loud alarm volume doesn't startle
+private const val SOUND_PREVIEW_MILLIS = 3400L
+private const val SOUND_PREVIEW_LEVEL = 0.6f
 
 class GentleAlertManager(private val context: Context) {
     private val scope = CoroutineScope(Dispatchers.Default)
     private var alertJob: Job? = null
     private var hapticJob: Job? = null
     private var volumeJob: Job? = null
+    private var soundPreviewJob: Job? = null
 
     private var mediaPlayer: MediaPlayer? = null
     private var audioTrack: AudioTrack? = null
@@ -51,34 +91,50 @@ class GentleAlertManager(private val context: Context) {
     val isAlerting: StateFlow<Boolean> = _isAlerting.asStateFlow()
 
     private val _currentVolume = MutableStateFlow(0f)
+
+    // How far the fade-in has come, from 0 to 1
     val currentVolume: StateFlow<Float> = _currentVolume.asStateFlow()
 
     // Sound and vibration configuration
     var soundMode: GentleSoundMode = GentleSoundMode.AMBIENT_BREATHE
     var crescendoDurationSeconds: Int = 25
-    var maxVolume: Float = 0.50f // Max 50% comfortable volume
+    var maxVolume: Float = 0.65f // Share of the phone's alarm volume at the end of the fade-in
     var hapticsEnabled: Boolean = true
-    var vibrationMode: GentleVibrationMode = GentleVibrationMode.SUBTLE_WHISPER
+    var vibrationMode: GentleVibrationMode = GentleVibrationMode.SOFT_PULSE
 
     fun startGentleAlert() {
         if (_isAlerting.value) return
+        stopAlert() // A sound preview may still be playing
         _isAlerting.value = true
         _currentVolume.value = 0f
 
-        when (soundMode) {
-            GentleSoundMode.AMBIENT_BREATHE -> startSynthesizedAmbient(toneType = 1)
-            GentleSoundMode.OCEAN_TIDE -> startSynthesizedAmbient(toneType = 2)
-            GentleSoundMode.FOREST_MIST -> startSynthesizedAmbient(toneType = 3)
-            GentleSoundMode.STELLAR_CALM -> startSynthesizedAmbient(toneType = 4)
-            GentleSoundMode.SYSTEM_GENTLE -> startSystemTone()
-        }
+        startSound(isPreview = false)
 
         if (hapticsEnabled) {
             startGentleHaptics()
         }
     }
 
-    private fun startSystemTone() {
+    fun previewSound() {
+        stopAlert()
+        startSound(isPreview = true)
+        soundPreviewJob = scope.launch {
+            delay(SOUND_PREVIEW_MILLIS)
+            stopAlert()
+        }
+    }
+
+    private fun startSound(isPreview: Boolean) {
+        when (soundMode) {
+            GentleSoundMode.AMBIENT_BREATHE -> startSynthesizedAmbient(toneType = 1, isPreview = isPreview)
+            GentleSoundMode.OCEAN_TIDE -> startSynthesizedAmbient(toneType = 2, isPreview = isPreview)
+            GentleSoundMode.FOREST_MIST -> startSynthesizedAmbient(toneType = 3, isPreview = isPreview)
+            GentleSoundMode.STELLAR_CALM -> startSynthesizedAmbient(toneType = 4, isPreview = isPreview)
+            GentleSoundMode.SYSTEM_GENTLE -> startSystemTone(isPreview)
+        }
+    }
+
+    private fun startSystemTone(isPreview: Boolean) {
         try {
             val alertUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
                 ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
@@ -92,10 +148,13 @@ class GentleAlertManager(private val context: Context) {
                         .build()
                 )
                 isLooping = true
-                setVolume(0.001f, 0.001f)
+                val startVolume = if (isPreview) SOUND_PREVIEW_LEVEL * maxVolume else 0.001f
+                setVolume(startVolume, startVolume)
                 prepare()
                 start()
             }
+
+            if (isPreview) return
 
             volumeJob = scope.launch {
                 val steps = crescendoDurationSeconds * 2
@@ -105,12 +164,12 @@ class GentleAlertManager(private val context: Context) {
                     // Quadratic ease-in for gentle progressive volume rise
                     val progress = i / steps.toFloat()
                     val vol = (progress * progress * maxVolume).coerceIn(0.005f, maxVolume)
-                    _currentVolume.value = vol
+                    _currentVolume.value = progress * progress
                     mediaPlayer?.setVolume(vol, vol)
                 }
             }
         } catch (e: Exception) {
-            startSynthesizedAmbient(toneType = 1)
+            startSynthesizedAmbient(toneType = 1, isPreview = isPreview)
         }
     }
 
@@ -118,7 +177,7 @@ class GentleAlertManager(private val context: Context) {
      * Synthesizes warm, non-intrusive ambient meditative swells using AudioTrack.
      * Completely avoids harsh transients, clicks, or abrupt attacks.
      */
-    private fun startSynthesizedAmbient(toneType: Int) {
+    private fun startSynthesizedAmbient(toneType: Int, isPreview: Boolean) {
         alertJob = scope.launch {
             val sampleRate = 44100
             val minBufSize = AudioTrack.getMinBufferSize(
@@ -130,8 +189,9 @@ class GentleAlertManager(private val context: Context) {
             val track = AudioTrack.Builder()
                 .setAudioAttributes(
                     AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        // The alarm volume: usually high, and on even when media is muted
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build()
                 )
                 .setAudioFormat(
@@ -151,13 +211,17 @@ class GentleAlertManager(private val context: Context) {
             val startTime = System.currentTimeMillis()
             val totalRampMillis = (crescendoDurationSeconds * 1000L).coerceAtLeast(1000L)
 
-            while (isActive && _isAlerting.value) {
+            while (isActive && (isPreview || _isAlerting.value)) {
                 val elapsed = System.currentTimeMillis() - startTime
                 val progress = (elapsed.toFloat() / totalRampMillis).coerceIn(0f, 1.0f)
                 // Quadratic curve (progress^2): starts at true whisper quiet and increases very slowly
-                val rampFactor = (progress * progress).coerceIn(0.003f, 1.0f)
+                val rampFactor = if (isPreview) {
+                    SOUND_PREVIEW_LEVEL
+                } else {
+                    (progress * progress).coerceIn(0.003f, 1.0f)
+                }
                 val currentVol = rampFactor * maxVolume
-                _currentVolume.value = currentVol
+                if (!isPreview) _currentVolume.value = rampFactor
 
                 // Generate a 3.2-second tranquil swell buffer
                 val pcmBuffer = generateAmbientSamples(sampleRate, toneType, currentVol)
@@ -240,80 +304,53 @@ class GentleAlertManager(private val context: Context) {
             // Initial 1.8s delay so the quiet ambient sound begins first
             delay(1800)
 
+            val startTime = System.currentTimeMillis()
+            val totalRampMillis = (crescendoDurationSeconds * 1000L).coerceAtLeast(1000L)
+
             while (isActive && _isAlerting.value) {
-                performVibrationPattern(vibrator, vibrationMode)
+                // Rises over the same time as the sound, so the two swell together
+                val elapsed = System.currentTimeMillis() - startTime
+                val progress = (elapsed.toFloat() / totalRampMillis).coerceIn(0f, 1f)
+                val strength = VIBRATION_START_STRENGTH + (1f - VIBRATION_START_STRENGTH) * progress
+
+                val pattern = vibrationMode.pattern()
+                playVibration(vibrator, pattern, strength)
+                delay(pattern.timings.sum() + pattern.pauseMillis)
             }
         }
     }
 
-    private suspend fun performVibrationPattern(vibrator: Vibrator, mode: GentleVibrationMode) {
-        val hasAmp = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && vibrator.hasAmplitudeControl()
-
-        when (mode) {
-            GentleVibrationMode.SUBTLE_WHISPER -> {
-                // Tiny soft single tap
-                if (hasAmp) {
-                    vibrator.vibrate(VibrationEffect.createOneShot(22, 35))
-                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    vibrator.vibrate(VibrationEffect.createOneShot(18, VibrationEffect.DEFAULT_AMPLITUDE))
-                } else {
-                    @Suppress("DEPRECATION")
-                    vibrator.vibrate(18)
-                }
-                delay(1900)
-            }
-            GentleVibrationMode.CALM_HEARTBEAT -> {
-                // Slow resting heartbeat (two delicate micro-pulses)
-                if (hasAmp) {
-                    vibrator.vibrate(VibrationEffect.createOneShot(20, 35))
-                    delay(140)
-                    vibrator.vibrate(VibrationEffect.createOneShot(22, 28))
-                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    vibrator.vibrate(VibrationEffect.createOneShot(16, VibrationEffect.DEFAULT_AMPLITUDE))
-                    delay(140)
-                    vibrator.vibrate(VibrationEffect.createOneShot(16, VibrationEffect.DEFAULT_AMPLITUDE))
-                } else {
-                    @Suppress("DEPRECATION")
-                    vibrator.vibrate(16)
-                    delay(140)
-                    @Suppress("DEPRECATION")
-                    vibrator.vibrate(16)
-                }
-                delay(2200)
-            }
-            GentleVibrationMode.BREATHING_WAVE -> {
-                // Gradual gentle wave rise & release
-                if (hasAmp) {
-                    val timings = longArrayOf(0, 25, 20, 25, 20, 30, 20, 25, 20, 25)
-                    val amplitudes = intArrayOf(0, 15, 0, 30, 0, 48, 0, 30, 0, 15)
-                    vibrator.vibrate(VibrationEffect.createWaveform(timings, amplitudes, -1))
-                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    vibrator.vibrate(VibrationEffect.createOneShot(24, VibrationEffect.DEFAULT_AMPLITUDE))
-                } else {
-                    @Suppress("DEPRECATION")
-                    vibrator.vibrate(24)
-                }
-                delay(2400)
-            }
-            GentleVibrationMode.FEATHER_TICK -> {
-                // Barely perceptible delicate haptic tick
-                if (hasAmp) {
-                    vibrator.vibrate(VibrationEffect.createOneShot(12, 25))
-                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    vibrator.vibrate(VibrationEffect.createOneShot(12, VibrationEffect.DEFAULT_AMPLITUDE))
-                } else {
-                    @Suppress("DEPRECATION")
-                    vibrator.vibrate(12)
-                }
-                delay(2000)
-            }
+    private fun playVibration(vibrator: Vibrator, pattern: VibrationPattern, strength: Float) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(pattern.plainTimings, -1)
+            return
         }
+
+        val effect = if (vibrator.hasAmplitudeControl()) {
+            val amplitudes = IntArray(pattern.strengths.size) { step ->
+                val stepStrength = pattern.strengths[step]
+                if (stepStrength == 0f) 0 else (stepStrength * strength * 255f).toInt().coerceIn(1, 255)
+            }
+            VibrationEffect.createWaveform(pattern.timings, amplitudes, -1)
+        } else {
+            VibrationEffect.createWaveform(pattern.plainTimings, -1)
+        }
+
+        // Alarm usage, so the phone's touch-vibration setting doesn't mute or weaken it
+        vibrator.vibrate(
+            effect,
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ALARM)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+        )
     }
 
     fun triggerVibrationPreview(mode: GentleVibrationMode) {
         scope.launch {
             val vibrator = getVibrator() ?: return@launch
-            performVibrationPattern(vibrator, mode)
+            playVibration(vibrator, mode.pattern(), strength = 1f)
         }
     }
 
@@ -340,6 +377,9 @@ class GentleAlertManager(private val context: Context) {
 
         volumeJob?.cancel()
         volumeJob = null
+
+        soundPreviewJob?.cancel()
+        soundPreviewJob = null
 
         hapticJob?.cancel()
         hapticJob = null

@@ -1,5 +1,6 @@
 package com.example
 
+import android.media.AudioManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -13,12 +14,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
 import com.example.ui.screens.CreateTimerSheet
 import com.example.ui.screens.FocusTimerScreen
 import com.example.ui.screens.SettingsDialog
@@ -33,6 +36,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // The volume buttons change the volume the alert actually plays at
+        volumeControlStream = AudioManager.STREAM_ALARM
 
         setContent {
             MyApplicationTheme {
@@ -62,6 +68,14 @@ fun TimerApp(viewModel: TimerViewModel) {
     var showCreateSheet by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
 
+    // Keep the screen awake while the clock runs and while the alert sounds
+    val view = LocalView.current
+    val keepAwake = activeState.isRunning || isAlerting
+    DisposableEffect(view, keepAwake) {
+        view.keepScreenOn = keepAwake
+        onDispose { view.keepScreenOn = false }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -81,15 +95,17 @@ fun TimerApp(viewModel: TimerViewModel) {
                     onBack = { viewModel.closeFullScreen() },
                     onTogglePlayPause = { viewModel.togglePlayPause() },
                     onReset = { viewModel.resetTimer() },
-                    onDismissAlert = { viewModel.dismissAlert() }
+                    onSilenceAlert = { viewModel.silenceAlert() }
                 )
             } else {
                 TimerListScreen(
                     timers = timers,
+                    runningTimerId = activeState.timerEntity?.id.takeIf { activeState.isRunning },
+                    runningTimeText = activeState.formattedRemaining(),
                     onAddTimerClick = { showCreateSheet = true },
                     onTimerSelect = { timer -> viewModel.openTimer(timer, autoStart = false) },
                     onDeleteTimer = { timer -> viewModel.deleteTimer(timer) },
-                    onReorderTimers = { from, to -> viewModel.reorderTimers(from, to) },
+                    onSaveOrder = { ordered -> viewModel.saveTimerOrder(ordered) },
                     onOpenSettings = { showSettingsDialog = true }
                 )
             }
@@ -120,7 +136,7 @@ fun TimerApp(viewModel: TimerViewModel) {
                 onSelectVibrationMode = { viewModel.updateVibrationMode(it) },
                 onToggleTestAlert = { viewModel.testAlertSound() },
                 onDismiss = {
-                    if (isAlerting) viewModel.dismissAlert()
+                    viewModel.silenceAlert()
                     showSettingsDialog = false
                 }
             )

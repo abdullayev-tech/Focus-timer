@@ -43,7 +43,7 @@ fun FocusTimerScreen(
     onBack: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onReset: () -> Unit,
-    onDismissAlert: () -> Unit,
+    onSilenceAlert: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val view = LocalView.current
@@ -53,9 +53,10 @@ fun FocusTimerScreen(
         onBack()
     }
 
-    // Simplified 2-tap interaction:
-    // Tap 1 (when alert sounding): stops alert and resets display to actual time ready to run
-    // Tap 2: immediately starts the timer
+    // When time is up:
+    // Tap 1 (when alert sounding): stops the alert; the clock keeps counting negative time
+    // Tap 2: resets to the actual time, ready to run
+    // Tap 3: immediately starts the timer
     fun handleTap() {
         try {
             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
@@ -63,10 +64,10 @@ fun FocusTimerScreen(
             // Ignore
         }
 
-        if (isAlerting) {
-            onDismissAlert()
-        } else {
-            onTogglePlayPause()
+        when {
+            isAlerting -> onSilenceAlert()
+            state.isCompleted -> onReset()
+            else -> onTogglePlayPause()
         }
     }
 
@@ -109,14 +110,15 @@ fun FocusTimerScreen(
                 timeText = state.formattedRemaining(),
                 isRunning = state.isRunning,
                 isCompleted = state.isCompleted || isAlerting,
+                isAlerting = isAlerting,
                 onTap = { handleTap() },
                 size = 320.dp
             )
         }
 
-        // Subtle prompt when alert is active
+        // Subtle prompt once time is up
         AnimatedVisibility(
-            visible = isAlerting,
+            visible = isAlerting || state.isCompleted,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier
@@ -124,7 +126,7 @@ fun FocusTimerScreen(
                 .padding(bottom = 48.dp)
         ) {
             Text(
-                text = "Tap to silence & reset",
+                text = if (isAlerting) "Tap to silence" else "Tap to reset",
                 color = TextSecondary,
                 fontSize = 14.sp,
                 fontFamily = FontFamily.Monospace,
