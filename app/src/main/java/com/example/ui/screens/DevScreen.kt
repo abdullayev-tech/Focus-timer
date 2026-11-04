@@ -83,6 +83,19 @@ fun DevScreen(
             )
         }
 
+        // Stays put above the list: the ring as it looks stopped, so a colour can be judged while picking
+        SimpleFocusRing(
+            progress = 1f,
+            timeText = "25:00",
+            isRunning = false,
+            isCompleted = false,
+            isAlerting = false,
+            stoppedColor = stoppedRingColor,
+            onTap = {},
+            size = 240.dp,
+            modifier = Modifier.align(Alignment.CenterHorizontally)
+        )
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -90,19 +103,6 @@ fun DevScreen(
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 24.dp)
         ) {
-            // The ring as it looks stopped, so a colour can be judged before going back
-            SimpleFocusRing(
-                progress = 1f,
-                timeText = "25:00",
-                isRunning = false,
-                isCompleted = false,
-                isAlerting = false,
-                stoppedColor = stoppedRingColor,
-                onTap = {},
-                size = 240.dp,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-            )
-
             SettingsGroup(title = "Stopped ring") {
                 StoppedRingColor.values().forEachIndexed { index, color ->
                     if (index > 0) RowDivider()
