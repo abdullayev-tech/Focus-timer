@@ -5,17 +5,22 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,7 +42,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.audio.GentleSoundMode
@@ -56,7 +63,8 @@ fun CreateTimerSheet(
     defaultSound: GentleSoundMode,
     onPreviewSound: (GentleSoundMode?) -> Unit,
     onDismiss: () -> Unit,
-    onCreateTimer: (label: String, totalSeconds: Long, autoStart: Boolean, sound: GentleSoundMode?) -> Unit
+    onCreateTimer: (label: String, totalSeconds: Long, autoStart: Boolean, sound: GentleSoundMode?) -> Unit,
+    onStartOneTime: (label: String, totalSeconds: Long, sound: GentleSoundMode?) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -67,9 +75,12 @@ fun CreateTimerSheet(
     var label by remember { mutableStateOf("Focus") }
     var sound by remember { mutableStateOf<GentleSoundMode?>(null) }
     var showSoundSheet by remember { mutableStateOf(false) }
+    var isOneTime by remember { mutableStateOf(false) }
 
     val totalSeconds = hours * 3600L + minutes * 60L + seconds
     val hasTime = totalSeconds > 0L
+    // A one-time timer can only be started: there's nothing to save
+    val canSave = hasTime && !isOneTime
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -110,12 +121,12 @@ fun CreateTimerSheet(
                         onCreateTimer(label, totalSeconds, false, sound)
                         onDismiss()
                     },
-                    enabled = hasTime,
+                    enabled = canSave,
                     modifier = Modifier.testTag("save_timer_button")
                 ) {
                     Text(
                         text = "Save",
-                        color = if (hasTime) AppleTimerOrange else TextMuted,
+                        color = if (canSave) AppleTimerOrange else TextMuted,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -158,34 +169,63 @@ fun CreateTimerSheet(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // This timer's own sound
+            // One row, as tall as a single cell: this timer's own sound, and whether it's kept
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(DarkSurfaceVariant)
-                    .clickable { showSoundSheet = true }
-                    .padding(start = 16.dp, end = 10.dp)
-                    .testTag("timer_sound_row"),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(
-                    text = "Sound",
-                    color = TextPrimary,
-                    fontSize = 16.sp
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = sound?.title ?: "Default",
-                        color = TextSecondary,
-                        fontSize = 14.sp
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .heightIn(min = 48.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(DarkSurfaceVariant)
+                        .clickable { showSoundSheet = true }
+                        .padding(start = 14.dp, end = 8.dp)
+                        .testTag("timer_sound_row"),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SheetCellText(
+                        title = "Sound",
+                        value = sound?.title ?: "Default",
+                        modifier = Modifier.weight(1f)
                     )
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                         contentDescription = null,
                         tint = TextMuted,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .heightIn(min = 48.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(DarkSurfaceVariant)
+                        .toggleable(
+                            value = isOneTime,
+                            role = Role.Switch,
+                            onValueChange = { isOneTime = it }
+                        )
+                        .padding(start = 14.dp, end = 10.dp)
+                        .testTag("one_time_toggle"),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SheetCellText(
+                        title = "One-time",
+                        value = if (isOneTime) "Won't be saved" else "Off",
+                        modifier = Modifier.weight(1f)
+                    )
+                    Icon(
+                        imageVector = if (isOneTime) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                        contentDescription = null,
+                        tint = if (isOneTime) AppleTimerOrange else TextMuted,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -195,7 +235,11 @@ fun CreateTimerSheet(
 
             Button(
                 onClick = {
-                    onCreateTimer(label, totalSeconds, true, sound)
+                    if (isOneTime) {
+                        onStartOneTime(label, totalSeconds, sound)
+                    } else {
+                        onCreateTimer(label, totalSeconds, true, sound)
+                    }
                     onDismiss()
                 },
                 enabled = hasTime,
@@ -229,6 +273,29 @@ fun CreateTimerSheet(
                 onPreviewSound(it)
             },
             onDismiss = { showSoundSheet = false }
+        )
+    }
+}
+
+// Two short lines, so half a row holds what a whole row used to
+@Composable
+private fun SheetCellText(title: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier) {
+        Text(
+            text = title,
+            color = TextPrimary,
+            fontSize = 14.sp,
+            lineHeight = 18.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = value,
+            color = TextSecondary,
+            fontSize = 12.sp,
+            lineHeight = 15.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }

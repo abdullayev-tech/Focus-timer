@@ -26,6 +26,7 @@ import com.example.ui.screens.CreateTimerSheet
 import com.example.ui.screens.DevScreen
 import com.example.ui.screens.FocusTimerScreen
 import com.example.ui.screens.SettingsDialog
+import com.example.ui.screens.StatsScreen
 import com.example.ui.screens.TimerListScreen
 import com.example.ui.screens.TimerSettingsSheet
 import com.example.ui.theme.MyApplicationTheme
@@ -73,6 +74,7 @@ fun TimerApp(viewModel: TimerViewModel) {
     var showCreateSheet by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showDevScreen by remember { mutableStateOf(false) }
+    var showStatsScreen by remember { mutableStateOf(false) }
     var settingsTimerId by remember { mutableStateOf<Long?>(null) }
     // Looked up by id so the sheet always shows what's saved
     val settingsTimer = timers.firstOrNull { it.id == settingsTimerId }
@@ -105,7 +107,7 @@ fun TimerApp(viewModel: TimerViewModel) {
                     onBack = { viewModel.closeFullScreen() },
                     onTogglePlayPause = { viewModel.togglePlayPause() },
                     onReset = { viewModel.resetTimer() },
-                    onSilenceAlert = { viewModel.silenceAlert() },
+                    onSilenceAlert = { viewModel.silenceSession() },
                     stoppedRingColor = stoppedRingColor
                 )
             } else {
@@ -113,14 +115,25 @@ fun TimerApp(viewModel: TimerViewModel) {
                     timers = timers,
                     runningTimerId = activeState.timerEntity?.id.takeIf { activeState.isRunning },
                     runningTimeText = activeState.formattedRemaining(),
+                    oneTimeTimer = activeState.timerEntity?.takeIf { it.isOneTime && activeState.isRunning },
                     onAddTimerClick = { showCreateSheet = true },
                     onTimerSelect = { timer -> viewModel.openTimer(timer, autoStart = false) },
                     onOpenTimerSettings = { timer -> settingsTimerId = timer.id },
                     onSaveOrder = { ordered -> viewModel.saveTimerOrder(ordered) },
                     onOpenSettings = { showSettingsDialog = true },
+                    onOpenStats = { showStatsScreen = true },
                     stoppedRingColor = stoppedRingColor
                 )
             }
+        }
+
+        // Stats. Gives way when time is up, like the dev screen
+        if (showStatsScreen && !isFullScreen) {
+            val events by remember { viewModel.recentEvents() }.collectAsState(initial = null)
+            StatsScreen(
+                events = events,
+                onBack = { showStatsScreen = false }
+            )
         }
 
         // Dev Screen. Gives way when time is up: the focus screen is where the alert is silenced
@@ -143,6 +156,9 @@ fun TimerApp(viewModel: TimerViewModel) {
                 onDismiss = { showCreateSheet = false },
                 onCreateTimer = { label, totalSeconds, autoStart, sound ->
                     viewModel.createTimer(label, totalSeconds, autoOpen = autoStart, sound = sound)
+                },
+                onStartOneTime = { label, totalSeconds, sound ->
+                    viewModel.startOneTimeTimer(label, totalSeconds, sound)
                 }
             )
         }

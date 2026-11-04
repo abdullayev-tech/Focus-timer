@@ -17,6 +17,9 @@ data class TimerEntity(
     val autoStopMinutes: Int? = null, // 0 means never
     val vibrationName: String? = null // A vibration's name, or VIBRATION_OFF_NAME
 ) {
+    // A one-time timer is never saved, so it has a negative id no saved timer can have
+    val isOneTime: Boolean get() = id < 0L
+
     fun formattedDuration(): String {
         val hours = totalSeconds / 3600
         val minutes = (totalSeconds % 3600) / 60

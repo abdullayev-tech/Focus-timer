@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Card
@@ -75,11 +76,13 @@ fun TimerListScreen(
     timers: List<TimerEntity>,
     runningTimerId: Long?,
     runningTimeText: String,
+    oneTimeTimer: TimerEntity?,
     onAddTimerClick: () -> Unit,
     onTimerSelect: (TimerEntity) -> Unit,
     onOpenTimerSettings: (TimerEntity) -> Unit,
     onSaveOrder: (List<TimerEntity>) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenStats: () -> Unit,
     stoppedRingColor: StoppedRingColor,
     modifier: Modifier = Modifier
 ) {
@@ -150,20 +153,39 @@ fun TimerListScreen(
                     letterSpacing = (-0.5).sp
                 )
 
-                IconButton(
-                    onClick = onOpenSettings,
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(DarkSurfaceVariant)
-                        .testTag("settings_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Tune,
-                        contentDescription = "Sound Settings",
-                        tint = TextSecondary,
-                        modifier = Modifier.size(18.dp)
-                    )
+                // Each button draws wider than its 40dp, so most of this gap goes to that
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    IconButton(
+                        onClick = onOpenStats,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(DarkSurfaceVariant)
+                            .testTag("stats_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.BarChart,
+                            contentDescription = "Stats",
+                            tint = TextSecondary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onOpenSettings,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(DarkSurfaceVariant)
+                            .testTag("settings_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = "Sound Settings",
+                            tint = TextSecondary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
 
@@ -173,7 +195,7 @@ fun TimerListScreen(
                     .fillMaxSize()
                     .weight(1f)
             ) {
-                if (reorder.items.isEmpty()) {
+                if (reorder.items.isEmpty() && oneTimeTimer == null) {
                     // Empty State
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -242,6 +264,25 @@ fun TimerListScreen(
                                 }
                             )
                         }
+
+                        // A one-time session still running needs a way back. It's here only
+                        // that long, and can't be moved or changed
+                        oneTimeTimer?.let { timer ->
+                            item(key = timer.id) {
+                                TimerRowCard(
+                                    timer = timer,
+                                    runningTimeText = runningTimeText,
+                                    isDragged = false,
+                                    dragBorderColor = stoppedRingColor.arc,
+                                    onClick = { if (reorder.draggedId == null) onTimerSelect(timer) },
+                                    onDragStart = {},
+                                    onDrag = {},
+                                    onDragEnd = {},
+                                    onOpenSettings = null,
+                                    modifier = Modifier.animateItem()
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -259,7 +300,7 @@ fun TimerRowCard(
     onDragStart: () -> Unit,
     onDrag: (deltaY: Float) -> Unit,
     onDragEnd: () -> Unit,
-    onOpenSettings: () -> Unit,
+    onOpenSettings: (() -> Unit)?,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -302,10 +343,11 @@ fun TimerRowCard(
                 Text(
                     text = buildAnnotatedString {
                         append(timer.label)
-                        // A timer with its own sound says so, quietly
-                        soundModeNamed(timer.soundName)?.let { sound ->
+                        // A one-time timer, or one with its own sound, says so, quietly
+                        val note = if (timer.isOneTime) "One-time" else soundModeNamed(timer.soundName)?.title
+                        note?.let {
                             withStyle(SpanStyle(color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Normal)) {
-                                append("  ${sound.title}")
+                                append("  $it")
                             }
                         }
                     },
@@ -327,18 +369,20 @@ fun TimerRowCard(
                 )
             }
 
-            IconButton(
-                onClick = onOpenSettings,
-                modifier = Modifier
-                    .size(40.dp)
-                    .testTag("timer_settings_${timer.id}")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = "Timer Settings",
-                    tint = TextMuted,
-                    modifier = Modifier.size(20.dp)
-                )
+            if (onOpenSettings != null) {
+                IconButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .testTag("timer_settings_${timer.id}")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Timer Settings",
+                        tint = TextMuted,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
         }
     }

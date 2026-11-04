@@ -10,13 +10,18 @@ import com.example.audio.GentleVibrationMode
 import com.example.audio.VIBRATION_OFF_NAME
 import com.example.audio.soundModeNamed
 import com.example.audio.vibrationModeNamed
+import com.example.data.EventLogDatabase
 import com.example.data.TimerDatabase
 import com.example.data.TimerEntity
+import com.example.data.TimerEvent
+import com.example.data.TimerEventType
 import com.example.data.TimerPreferences
 import com.example.data.TimerRepository
+import com.example.data.lastSevenDayStarts
 import com.example.ui.theme.StoppedRingColor
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -65,6 +70,7 @@ data class ActiveTimerState(
 class TimerViewModel(application: Application) : AndroidViewModel(application) {
     private val repository: TimerRepository
     private val prefs = TimerPreferences(application)
+    private val eventDao = EventLogDatabase.getDatabase(application).timerEventDao()
     val alertManager = GentleAlertManager(application)
 
     val timers: StateFlow<List<TimerEntity>>
@@ -99,6 +105,9 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     private var countdownJob: Job? = null
     private var lastTickTime: Long = 0L
 
+    // What the clock said when it last began running; null while it isn't
+    private var stretchStartMillis: Long? = null
+
     init {
         // Sync alert manager with saved preferences
         alertManager.soundMode = _selectedSoundMode.value
@@ -121,8 +130,14 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         // Its session is still running: go back to it, don't restart it
         val current = _activeState.value
         if (current.isRunning && current.timerEntity?.id == timer.id) {
+            logSession(TimerEventType.RETURNED)
             _isFullScreen.value = true
             return
+        }
+
+        // This takes the place of whatever was still running
+        if (current.isRunning) {
+            logSession(TimerEventType.CLOSED, takeRanMillis())
         }
 
         countdownJob?.cancel()
@@ -136,6 +151,8 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         _isFullScreen.value = true
         if (autoStart) {
             startTimer()
+        } else {
+            logSession(TimerEventType.OPENED)
         }
     }
 
@@ -143,13 +160,18 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     fun closeFullScreen() {
         val current = _activeState.value
         if (!current.isRunning || current.isCompleted) {
-            resetTimer()
+            logSession(TimerEventType.CLOSED, takeRanMillis())
+            clearClock()
+        } else {
+            logSession(TimerEventType.LEFT)
         }
         _isFullScreen.value = false
     }
 
     fun startTimer() {
         val current = _activeState.value
+        val isFromTheTop = current.remainingMillis <= 0L || current.isCompleted ||
+            current.remainingMillis >= current.totalSeconds * 1000L
         if (current.remainingMillis <= 0L || current.isCompleted) {
             // Reset to full if starting from completed state
             _activeState.value = current.copy(
@@ -162,6 +184,8 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
 
         _activeState.value = _activeState.value.copy(isRunning = true, isCompleted = false)
         lastTickTime = System.currentTimeMillis()
+        stretchStartMillis = _activeState.value.remainingMillis
+        logSession(if (isFromTheTop) TimerEventType.STARTED else TimerEventType.RESUMED)
 
         countdownJob?.cancel()
         countdownJob = viewModelScope.launch {
@@ -178,6 +202,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
                     isCompleted = updatedMillis <= 0L
                 )
                 if (justFinished) {
+                    logSession(TimerEventType.FINISHED, takeRanMillis())
                     startAlertFor(_activeState.value.timerEntity)
                     // The focus screen is where the alert can be silenced
                     _isFullScreen.value = true
@@ -189,6 +214,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     fun pauseTimer() {
         countdownJob?.cancel()
         _activeState.value = _activeState.value.copy(isRunning = false)
+        logSession(TimerEventType.PAUSED, takeRanMillis())
     }
 
     fun togglePlayPause() {
@@ -200,6 +226,11 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun resetTimer() {
+        logSession(TimerEventType.RESET, takeRanMillis())
+        clearClock()
+    }
+
+    private fun clearClock() {
         countdownJob?.cancel()
         if (alertManager.isAlerting.value) {
             alertManager.stopAlert()
@@ -217,6 +248,61 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         alertManager.stopAlert()
     }
 
+    /** The person silencing a session's alert, as opposed to leaving a settings test. */
+    fun silenceSession() {
+        if (alertManager.isAlerting.value) {
+            logSession(TimerEventType.SILENCED)
+        }
+        silenceAlert()
+    }
+
+    fun recentEvents(): Flow<List<TimerEvent>> {
+        return eventDao.eventsSince(lastSevenDayStarts(System.currentTimeMillis()).first())
+    }
+
+    private fun logSession(type: TimerEventType, ranMillis: Long? = null) {
+        val state = _activeState.value
+        log(type, state.timerEntity, state.remainingMillis, ranMillis)
+    }
+
+    private fun log(
+        type: TimerEventType,
+        timer: TimerEntity? = null,
+        remainingMillis: Long? = null,
+        ranMillis: Long? = null
+    ) {
+        val event = TimerEvent(
+            type = type,
+            timerId = timer?.id,
+            label = timer?.label,
+            totalSeconds = timer?.totalSeconds,
+            remainingMillis = remainingMillis,
+            ranMillis = ranMillis
+        )
+        viewModelScope.launch {
+            eventDao.insert(event)
+        }
+    }
+
+    // How much of the timer this stretch of running used. Only the first caller gets it
+    private fun takeRanMillis(): Long? {
+        val start = stretchStartMillis ?: return null
+        stretchStartMillis = null
+        return start - _activeState.value.remainingMillis.coerceAtLeast(0L)
+    }
+
+    /** Runs right away and is never saved. Once its session is over, nothing is left of it. */
+    fun startOneTimeTimer(label: String, totalSeconds: Long, sound: GentleSoundMode? = null) {
+        val timer = TimerEntity(
+            id = -System.currentTimeMillis(),
+            label = label.ifBlank { "Focus Block" },
+            totalSeconds = totalSeconds,
+            soundName = sound?.name
+        )
+        log(TimerEventType.CREATED, timer)
+        openTimer(timer, autoStart = true)
+    }
+
     fun createTimer(
         label: String,
         totalSeconds: Long,
@@ -232,8 +318,9 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
                 soundName = sound?.name
             )
             val id = repository.insert(newTimer)
+            val savedTimer = newTimer.copy(id = id)
+            log(TimerEventType.CREATED, savedTimer)
             if (autoOpen) {
-                val savedTimer = newTimer.copy(id = id)
                 openTimer(savedTimer, autoStart = true)
             }
         }
@@ -258,6 +345,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         if (_activeState.value.timerEntity?.id == timer.id) {
             _activeState.value = _activeState.value.copy(timerEntity = timer)
         }
+        log(TimerEventType.EDITED, timer)
         viewModelScope.launch {
             repository.update(timer)
         }
@@ -283,6 +371,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         val reordered = ordered.mapIndexed { index, timer ->
             timer.copy(displayOrder = index)
         }
+        log(TimerEventType.REORDERED)
         viewModelScope.launch {
             repository.updateAll(reordered)
         }
@@ -291,9 +380,13 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteTimer(timer: TimerEntity) {
         viewModelScope.launch {
             if (_activeState.value.timerEntity?.id == timer.id) {
-                resetTimer()
-                closeFullScreen()
+                if (_activeState.value.isRunning) {
+                    logSession(TimerEventType.CLOSED, takeRanMillis())
+                }
+                clearClock()
+                _isFullScreen.value = false
             }
+            log(TimerEventType.DELETED, timer)
             repository.delete(timer)
         }
     }
@@ -302,6 +395,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         _selectedSoundMode.value = mode
         alertManager.soundMode = mode
         prefs.setSoundMode(mode)
+        log(TimerEventType.ALERT_CHANGED)
         alertManager.previewSound()
     }
 
@@ -316,6 +410,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         _autoStopMinutes.value = minutes
         alertManager.autoStopMinutes = minutes
         prefs.setAutoStopMinutes(minutes)
+        log(TimerEventType.ALERT_CHANGED)
     }
 
     fun updateStoppedRingColor(color: StoppedRingColor) {
@@ -327,18 +422,22 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         _crescendoDuration.value = seconds
         alertManager.crescendoDurationSeconds = seconds
         prefs.setCrescendoDuration(seconds)
+        log(TimerEventType.ALERT_CHANGED)
     }
 
     fun updateHapticsEnabled(enabled: Boolean) {
         _hapticsEnabled.value = enabled
         alertManager.hapticsEnabled = enabled
         prefs.setHapticsEnabled(enabled)
+        // Turning it on always comes with picking a vibration, which logs itself
+        if (!enabled) log(TimerEventType.ALERT_CHANGED)
     }
 
     fun updateVibrationMode(mode: GentleVibrationMode) {
         _vibrationMode.value = mode
         alertManager.vibrationMode = mode
         prefs.setVibrationMode(mode)
+        log(TimerEventType.ALERT_CHANGED)
         alertManager.triggerVibrationPreview(mode)
     }
 
