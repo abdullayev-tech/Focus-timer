@@ -156,7 +156,7 @@ internal fun DevPasswordDialog(onUnlock: () -> Unit, onDismiss: () -> Unit) {
 
 /**
  * The owner's test bench, reached from the top left of the Alert settings sheet:
- * three quick taps on the dev button, then the password.
+ * three quick taps on the blank spot there, then the password.
  * Each thing being tried is one more SettingsGroup in the column below.
  */
 @Composable

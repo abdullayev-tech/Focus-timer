@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -28,16 +29,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.session.ActiveTimerState
 import com.example.ui.components.SimpleFocusRing
 import com.example.ui.theme.CompletedRingArc
 import com.example.ui.theme.DarkSurfaceVariant
 import com.example.ui.theme.OLEDBlack
 import com.example.ui.theme.StoppedRingColor
+import com.example.ui.theme.TextLabel
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
-import com.example.viewmodel.ActiveTimerState
 
 @Composable
 fun FocusTimerScreen(
@@ -145,6 +148,21 @@ fun FocusTimerScreen(
                 onTap = { handleTap() },
                 size = 320.dp
             )
+
+            // What this session is for, inside the ring above the clock
+            state.timerEntity?.let { timer ->
+                Text(
+                    text = timer.label,
+                    color = TextLabel,
+                    fontSize = 16.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .padding(bottom = 140.dp)
+                        .widthIn(max = 220.dp)
+                        .testTag("focus_label")
+                )
+            }
         }
 
         // Subtle prompt once time is up

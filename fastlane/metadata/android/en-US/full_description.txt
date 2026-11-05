@@ -1,12 +1,12 @@
 Focus Timer is a quiet timer for doing one thing at a time. Pick what you are working on, start the clock and put the phone down. When the time is up, a gentle alert fades in.
 
 <ul>
-<li>Save timers for the things you do often and start them in one tap</li>
+<li>Save timers for the things you do often</li>
 <li>Run a one-time timer when you don't need to keep it</li>
-<li>A full-screen ring that shows how long is left, and nothing else</li>
+<li>A full-screen ring that shows what you are doing and how long is left</li>
 <li>An alert that fades in: built-in sounds or an alarm tone from your phone</li>
 <li>Soft vibration patterns, and sound settings for each timer</li>
-<li>A simple stats screen, kept on your device</li>
+<li>A stats screen, kept on your device</li>
 </ul>
 
-No account, no ads and no tracking. The app has no internet permission, so your timers and stats never leave your phone.
+No account, no ads and no tracking. The app has no internet permission.

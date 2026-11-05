@@ -20,6 +20,7 @@ class TimerPreferences(context: Context) {
         private const val KEY_RINGTONE_URI = "pref_ringtone_uri"
         private const val KEY_AUTO_STOP_MINUTES = "pref_auto_stop_minutes"
         private const val KEY_STOPPED_RING_COLOR = "pref_stopped_ring_color"
+        private const val KEY_ASKED_NOTIFICATIONS = "pref_asked_notifications"
     }
 
     fun getSoundMode(): GentleSoundMode {
@@ -88,5 +89,13 @@ class TimerPreferences(context: Context) {
 
     fun setStoppedRingColor(color: StoppedRingColor) {
         prefs.edit().putString(KEY_STOPPED_RING_COLOR, color.name).apply()
+    }
+
+    fun wasAskedForNotifications(): Boolean {
+        return prefs.getBoolean(KEY_ASKED_NOTIFICATIONS, false)
+    }
+
+    fun setAskedForNotifications() {
+        prefs.edit().putBoolean(KEY_ASKED_NOTIFICATIONS, true).apply()
     }
 }

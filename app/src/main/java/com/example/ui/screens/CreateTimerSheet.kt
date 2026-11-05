@@ -240,7 +240,6 @@ fun CreateTimerSheet(
                     } else {
                         onCreateTimer(label, totalSeconds, true, sound)
                     }
-                    onDismiss()
                 },
                 enabled = hasTime,
                 colors = ButtonDefaults.buttonColors(

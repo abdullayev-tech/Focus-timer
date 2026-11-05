@@ -8,4 +8,6 @@
     <exclude domain="database" path="focus_timer_log" />
     <exclude domain="database" path="focus_timer_log-wal" />
     <exclude domain="database" path="focus_timer_log-shm" />
+    <!-- A session in progress means nothing on another phone -->
+    <exclude domain="sharedpref" path="focus_session.xml" />
 </full-backup-content>

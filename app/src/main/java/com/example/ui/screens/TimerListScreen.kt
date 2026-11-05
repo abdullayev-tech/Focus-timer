@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -28,6 +27,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
@@ -35,6 +35,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -53,6 +54,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -118,7 +120,6 @@ fun TimerListScreen(
                 contentColor = OLEDBlack,
                 shape = CircleShape,
                 modifier = Modifier
-                    .navigationBarsPadding()
                     .padding(bottom = 12.dp, end = 12.dp)
                     .size(60.dp)
                     .testTag("add_timer_fab")
@@ -288,6 +289,57 @@ fun TimerListScreen(
             }
         }
     }
+}
+
+@Composable
+fun SwitchSessionDialog(
+    runningLabel: String,
+    runningTimeText: String,
+    nextLabel: String,
+    onKeepGoing: () -> Unit,
+    onStartNext: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onKeepGoing,
+        containerColor = DarkSurface,
+        title = {
+            Text(
+                text = "$runningLabel is running · $runningTimeText",
+                color = TextPrimary,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onKeepGoing,
+                modifier = Modifier.testTag("switch_keep_going")
+            ) {
+                Text(
+                    text = "Keep going",
+                    color = AppleTimerOrange,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onStartNext,
+                modifier = Modifier.testTag("switch_start_next")
+            ) {
+                Text(
+                    text = "Start ${nextLabel.ifBlank { "Focus Block" }}",
+                    color = TextSecondary,
+                    fontSize = 16.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    )
 }
 
 @Composable

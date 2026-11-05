@@ -1,10 +1,17 @@
 package com.example
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.media.AudioManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
@@ -15,6 +22,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -22,11 +30,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
+import androidx.core.content.ContextCompat
+import com.example.session.FocusSession
 import com.example.ui.screens.CreateTimerSheet
 import com.example.ui.screens.DevScreen
 import com.example.ui.screens.FocusTimerScreen
 import com.example.ui.screens.SettingsDialog
 import com.example.ui.screens.StatsScreen
+import com.example.ui.screens.SwitchSessionDialog
 import com.example.ui.screens.TimerListScreen
 import com.example.ui.screens.TimerSettingsSheet
 import com.example.ui.theme.MyApplicationTheme
@@ -35,10 +46,22 @@ import com.example.viewmodel.TimerViewModel
 
 class MainActivity : ComponentActivity() {
     private val viewModel: TimerViewModel by viewModels()
+    private val session by lazy { FocusSession.get(this) }
+
+    // The app is always dark. Told so here, the system bars and every sheet's window get
+    // light icons on a phone set to light mode too
+    override fun attachBaseContext(newBase: Context) {
+        val config = Configuration(newBase.resources.configuration)
+        config.uiMode = (config.uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
+            Configuration.UI_MODE_NIGHT_YES
+        super.attachBaseContext(newBase.createConfigurationContext(config))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        if (savedInstanceState == null) session.showSessionInProgress()
 
         // The volume buttons change the volume the alert actually plays at
         volumeControlStream = AudioManager.STREAM_ALARM
@@ -50,11 +73,24 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        session.setUiVisible(true)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        session.setUiVisible(false)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
-        viewModel.alertManager.stopAlert()
+        session.onUiDestroyed()
     }
 }
+
+// Nothing ends until the person says so
+private class PendingSwitch(val label: String, val start: () -> Unit)
 
 @Composable
 fun TimerApp(viewModel: TimerViewModel) {
@@ -76,6 +112,7 @@ fun TimerApp(viewModel: TimerViewModel) {
     var showDevScreen by remember { mutableStateOf(false) }
     var showStatsScreen by remember { mutableStateOf(false) }
     var settingsTimerId by remember { mutableStateOf<Long?>(null) }
+    var pendingSwitch by remember { mutableStateOf<PendingSwitch?>(null) }
     // Looked up by id so the sheet always shows what's saved
     val settingsTimer = timers.firstOrNull { it.id == settingsTimerId }
 
@@ -86,6 +123,29 @@ fun TimerApp(viewModel: TimerViewModel) {
     DisposableEffect(view, keepAwake) {
         view.keepScreenOn = keepAwake
         onDispose { view.keepScreenOn = false }
+    }
+
+    // Asked once, as the first session starts. The alert sounds either way
+    val notificationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) viewModel.refreshNotice()
+    }
+    LaunchedEffect(activeState.isRunning) {
+        if (activeState.isRunning &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(view.context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED &&
+            viewModel.shouldAskForNotifications()
+        ) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    // Time ran out while the question was open: there's nothing left to ask about
+    val isClockRunning = activeState.isRunning && !activeState.isCompleted
+    LaunchedEffect(isClockRunning) {
+        if (!isClockRunning) pendingSwitch = null
     }
 
     Box(
@@ -117,7 +177,15 @@ fun TimerApp(viewModel: TimerViewModel) {
                     runningTimeText = activeState.formattedRemaining(),
                     oneTimeTimer = activeState.timerEntity?.takeIf { it.isOneTime && activeState.isRunning },
                     onAddTimerClick = { showCreateSheet = true },
-                    onTimerSelect = { timer -> viewModel.openTimer(timer, autoStart = false) },
+                    onTimerSelect = { timer ->
+                        if (isClockRunning && timer.id != activeState.timerEntity?.id) {
+                            pendingSwitch = PendingSwitch(timer.label) {
+                                viewModel.openTimer(timer, autoStart = true)
+                            }
+                        } else {
+                            viewModel.openTimer(timer, autoStart = false)
+                        }
+                    },
                     onOpenTimerSettings = { timer -> settingsTimerId = timer.id },
                     onSaveOrder = { ordered -> viewModel.saveTimerOrder(ordered) },
                     onOpenSettings = { showSettingsDialog = true },
@@ -154,11 +222,42 @@ fun TimerApp(viewModel: TimerViewModel) {
                 defaultSound = soundMode,
                 onPreviewSound = { viewModel.previewSound(it) },
                 onDismiss = { showCreateSheet = false },
+                // Answering "Keep going" comes back to this sheet with nothing lost and nothing saved
                 onCreateTimer = { label, totalSeconds, autoStart, sound ->
-                    viewModel.createTimer(label, totalSeconds, autoOpen = autoStart, sound = sound)
+                    val create = {
+                        viewModel.createTimer(label, totalSeconds, autoOpen = autoStart, sound = sound)
+                        showCreateSheet = false
+                    }
+                    if (autoStart && isClockRunning) {
+                        pendingSwitch = PendingSwitch(label, create)
+                    } else {
+                        create()
+                    }
                 },
                 onStartOneTime = { label, totalSeconds, sound ->
-                    viewModel.startOneTimeTimer(label, totalSeconds, sound)
+                    val start = {
+                        viewModel.startOneTimeTimer(label, totalSeconds, sound)
+                        showCreateSheet = false
+                    }
+                    if (isClockRunning) {
+                        pendingSwitch = PendingSwitch(label, start)
+                    } else {
+                        start()
+                    }
+                }
+            )
+        }
+
+        // Starting something else while the clock runs
+        pendingSwitch?.let { switch ->
+            SwitchSessionDialog(
+                runningLabel = activeState.timerEntity?.label.orEmpty(),
+                runningTimeText = activeState.formattedRemaining(),
+                nextLabel = switch.label,
+                onKeepGoing = { pendingSwitch = null },
+                onStartNext = {
+                    switch.start()
+                    pendingSwitch = null
                 }
             )
         }
