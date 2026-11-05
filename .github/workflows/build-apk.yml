@@ -37,16 +37,8 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
-      - name: Prepare Secrets and Keystore
+      - name: Prepare Keystore
         run: |
-          echo "Setting up configuration files and keystore..."
-          # Secrets configuration
-          if [ ! -f ".env" ] && [ -f ".env.example" ]; then
-            cp .env.example .env
-          elif [ ! -f ".env" ]; then
-            touch .env
-          fi
-
           # Prepare debug keystore for signing debug APK
           if [ ! -f "debug.keystore" ]; then
             if [ -f "debug.keystore.base64" ]; then

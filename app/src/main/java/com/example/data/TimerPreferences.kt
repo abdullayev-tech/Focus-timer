@@ -83,7 +83,7 @@ class TimerPreferences(context: Context) {
 
     fun getStoppedRingColor(): StoppedRingColor {
         val savedName = prefs.getString(KEY_STOPPED_RING_COLOR, null)
-        return StoppedRingColor.values().firstOrNull { it.name == savedName } ?: StoppedRingColor.SLATE_BLUE
+        return StoppedRingColor.values().firstOrNull { it.name == savedName } ?: StoppedRingColor.STEEL
     }
 
     fun setStoppedRingColor(color: StoppedRingColor) {

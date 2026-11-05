@@ -1,6 +1,0 @@
-{
-  "name": "Focus Timer",
-  "description": "Minimalist, bottom-first focus timer with scrollable time picker, full-screen focus, and gentle crescendo chime.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

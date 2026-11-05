@@ -3,6 +3,7 @@ package com.example.ui.screens
 import android.content.Intent
 import android.media.RingtoneManager
 import android.net.Uri
+import android.os.SystemClock
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -41,6 +42,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -93,6 +95,8 @@ fun SettingsDialog(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scrollState = rememberScrollState()
     val context = LocalContext.current
+    val devTaps = remember { RapidTaps(DEV_TAP_COUNT, DEV_TAP_GAP_MILLIS) }
+    var showDevPassword by remember { mutableStateOf(false) }
 
     val ringtonePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -139,7 +143,9 @@ fun SettingsDialog(
         ) {
             SheetHeader(title = "Alert", onDone = onDismiss) {
                 IconButton(
-                    onClick = onOpenDev,
+                    onClick = {
+                        if (devTaps.tap(SystemClock.uptimeMillis())) showDevPassword = true
+                    },
                     modifier = Modifier
                         .size(40.dp)
                         .testTag("dev_button")
@@ -211,6 +217,16 @@ fun SettingsDialog(
                 onToggle = onToggleTestAlert
             )
         }
+    }
+
+    if (showDevPassword) {
+        DevPasswordDialog(
+            onUnlock = {
+                showDevPassword = false
+                onOpenDev()
+            },
+            onDismiss = { showDevPassword = false }
+        )
     }
 }
 

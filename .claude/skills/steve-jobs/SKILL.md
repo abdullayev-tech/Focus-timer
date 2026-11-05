@@ -94,7 +94,7 @@ uninstalling first.
 line.** On an emulator, go ahead. Keep screenshots in the scratchpad, never in the repo.
 
 ```bash
-PKG=com.aistudio.focustimer.nqxvk
+PKG=io.github.abdullayev_tech.focustimer
 adb shell pm clear $PKG                                        # a true first visit
 adb shell monkey -p $PKG -c android.intent.category.LAUNCHER 1 # open the app
 adb exec-out screencap -p > <scratchpad>/NN-<journey>-<screen>.png
