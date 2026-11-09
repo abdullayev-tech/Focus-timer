@@ -71,16 +71,22 @@ data class ActiveTimerState(
 /** What the notification should say. */
 sealed interface SessionNotice {
     data object None : SessionNotice
-    data class Running(val label: String, val endAtMillis: Long) : SessionNotice
-    data class Done(val label: String) : SessionNotice
+    // timeInStatusBar: the time left sits beside the icon at the top, where the phone can show it
+    data class Running(val label: String, val endAtMillis: Long, val timeInStatusBar: Boolean) : SessionNotice
+    data class Done(val label: String, val timeInStatusBar: Boolean) : SessionNotice
 }
 
-internal fun noticeFor(state: ActiveTimerState, isAlerting: Boolean): SessionNotice {
+internal fun noticeFor(
+    state: ActiveTimerState,
+    isAlerting: Boolean,
+    timeInStatusBar: Boolean = true
+): SessionNotice {
     val label = state.timerEntity?.label ?: return SessionNotice.None
     val endAt = state.endAtMillis
     return when {
-        state.isCompleted && isAlerting -> SessionNotice.Done(label)
-        state.isRunning && !state.isCompleted && endAt != null -> SessionNotice.Running(label, endAt)
+        state.isCompleted && isAlerting -> SessionNotice.Done(label, timeInStatusBar)
+        state.isRunning && !state.isCompleted && endAt != null ->
+            SessionNotice.Running(label, endAt, timeInStatusBar)
         else -> SessionNotice.None
     }
 }
@@ -124,9 +130,13 @@ class FocusSession internal constructor(
     private val _isFullScreen = MutableStateFlow(false)
     val isFullScreen: StateFlow<Boolean> = _isFullScreen.asStateFlow()
 
+    private val prefs = TimerPreferences(app)
+    private val _timeInStatusBar = MutableStateFlow(prefs.getTimeInStatusBar())
+    val timeInStatusBar: StateFlow<Boolean> = _timeInStatusBar.asStateFlow()
+
     val notices: Flow<SessionNotice> =
-        combine(_activeState, alertManager.isAlerting) { state, isAlerting ->
-            noticeFor(state, isAlerting)
+        combine(_activeState, alertManager.isAlerting, _timeInStatusBar) { state, isAlerting, inStatusBar ->
+            noticeFor(state, isAlerting, inStatusBar)
         }.distinctUntilChanged()
 
     private var countdownJob: Job? = null
@@ -137,7 +147,6 @@ class FocusSession internal constructor(
 
     init {
         // Set here, not on a screen: the alarm can bring the process back with no screen at all
-        val prefs = TimerPreferences(app)
         alertManager.soundMode = prefs.getSoundMode()
         alertManager.crescendoDurationSeconds = prefs.getCrescendoDuration()
         alertManager.hapticsEnabled = prefs.getHapticsEnabled()
@@ -167,7 +176,13 @@ class FocusSession internal constructor(
     }
 
     fun currentNotice(): SessionNotice {
-        return noticeFor(_activeState.value, alertManager.isAlerting.value)
+        return noticeFor(_activeState.value, alertManager.isAlerting.value, _timeInStatusBar.value)
+    }
+
+    /** A running notification changes along with it. */
+    fun setTimeInStatusBar(show: Boolean) {
+        _timeInStatusBar.value = show
+        prefs.setTimeInStatusBar(show)
     }
 
     /** Whether something on the clock would be lost by starting something else. */

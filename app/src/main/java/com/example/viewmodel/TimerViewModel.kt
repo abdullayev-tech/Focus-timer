@@ -37,6 +37,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
 
     val activeState: StateFlow<ActiveTimerState> = session.activeState
     val isFullScreen: StateFlow<Boolean> = session.isFullScreen
+    val timeInStatusBar: StateFlow<Boolean> = session.timeInStatusBar
 
     private val _selectedSoundMode = MutableStateFlow(prefs.getSoundMode())
     val selectedSoundMode: StateFlow<GentleSoundMode> = _selectedSoundMode.asStateFlow()
@@ -220,6 +221,10 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         alertManager.crescendoDurationSeconds = seconds
         prefs.setCrescendoDuration(seconds)
         session.log(TimerEventType.ALERT_CHANGED)
+    }
+
+    fun updateTimeInStatusBar(show: Boolean) {
+        session.setTimeInStatusBar(show)
     }
 
     fun updateHapticsEnabled(enabled: Boolean) {

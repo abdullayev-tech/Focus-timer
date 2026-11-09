@@ -141,14 +141,27 @@ class FocusSessionTest {
   @Test
   fun `the notification says what is going on`() {
     val running = ActiveTimerState(timer, 60, 1000, isRunning = true, endAtMillis = 5000)
-    assertEquals(SessionNotice.Running("Deep work", 5000), noticeFor(running, isAlerting = false))
+    assertEquals(SessionNotice.Running("Deep work", 5000, timeInStatusBar = true), noticeFor(running, isAlerting = false))
 
     val done = running.copy(isCompleted = true)
-    assertEquals(SessionNotice.Done("Deep work"), noticeFor(done, isAlerting = true))
+    assertEquals(SessionNotice.Done("Deep work", timeInStatusBar = true), noticeFor(done, isAlerting = true))
     assertEquals(SessionNotice.None, noticeFor(done, isAlerting = false))
 
     assertEquals(SessionNotice.None, noticeFor(running.copy(isRunning = false, endAtMillis = null), false))
     assertEquals(SessionNotice.None, noticeFor(ActiveTimerState(), false))
+  }
+
+  @Test
+  fun `the status bar shows the time only when asked`() {
+    val running = ActiveTimerState(timer, 60, 1000, isRunning = true, endAtMillis = 5000)
+    assertEquals(
+      SessionNotice.Running("Deep work", 5000, timeInStatusBar = false),
+      noticeFor(running, isAlerting = false, timeInStatusBar = false)
+    )
+    assertEquals(
+      SessionNotice.Done("Deep work", timeInStatusBar = false),
+      noticeFor(running.copy(isCompleted = true), isAlerting = true, timeInStatusBar = false)
+    )
   }
 
   @Test

@@ -106,6 +106,7 @@ fun TimerApp(viewModel: TimerViewModel) {
     val ringtoneUri by viewModel.ringtoneUri.collectAsState()
     val autoStopMinutes by viewModel.autoStopMinutes.collectAsState()
     val stoppedRingColor by viewModel.stoppedRingColor.collectAsState()
+    val timeInStatusBar by viewModel.timeInStatusBar.collectAsState()
 
     var showCreateSheet by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
@@ -271,6 +272,7 @@ fun TimerApp(viewModel: TimerViewModel) {
                 vibrationMode = vibrationMode,
                 ringtoneUri = ringtoneUri,
                 autoStopMinutes = autoStopMinutes,
+                timeInStatusBar = timeInStatusBar,
                 isTestingAlert = isAlerting,
                 testVolume = alertVolume,
                 onSelectMode = { viewModel.updateSoundMode(it) },
@@ -279,6 +281,7 @@ fun TimerApp(viewModel: TimerViewModel) {
                 onSelectCrescendoDuration = { viewModel.updateCrescendoDuration(it) },
                 onToggleHaptics = { viewModel.updateHapticsEnabled(it) },
                 onSelectVibrationMode = { viewModel.updateVibrationMode(it) },
+                onSelectTimeInStatusBar = { viewModel.updateTimeInStatusBar(it) },
                 onToggleTestAlert = { viewModel.testAlertSound() },
                 onOpenDev = {
                     viewModel.silenceAlert()

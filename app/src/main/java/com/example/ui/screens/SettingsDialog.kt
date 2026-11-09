@@ -3,6 +3,7 @@ package com.example.ui.screens
 import android.content.Intent
 import android.media.RingtoneManager
 import android.net.Uri
+import android.os.Build
 import android.os.SystemClock
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -80,6 +81,7 @@ fun SettingsDialog(
     vibrationMode: GentleVibrationMode,
     ringtoneUri: Uri?,
     autoStopMinutes: Int,
+    timeInStatusBar: Boolean,
     isTestingAlert: Boolean,
     testVolume: Float,
     onSelectMode: (GentleSoundMode) -> Unit,
@@ -88,6 +90,7 @@ fun SettingsDialog(
     onSelectCrescendoDuration: (Int) -> Unit,
     onToggleHaptics: (Boolean) -> Unit,
     onSelectVibrationMode: (GentleVibrationMode) -> Unit,
+    onSelectTimeInStatusBar: (Boolean) -> Unit,
     onToggleTestAlert: () -> Unit,
     onOpenDev: () -> Unit,
     onDismiss: () -> Unit
@@ -203,6 +206,25 @@ fun SettingsDialog(
                             onSelectVibrationMode(mode)
                         },
                         modifier = Modifier.testTag("vibration_${mode.name}")
+                    )
+                }
+            }
+
+            // Only Android 16 and later can show the time up there
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
+                SettingsGroup(title = "Status bar", footer = "While a timer runs") {
+                    CheckRow(
+                        title = "Time left",
+                        isSelected = timeInStatusBar,
+                        onClick = { onSelectTimeInStatusBar(true) },
+                        modifier = Modifier.testTag("status_bar_time")
+                    )
+                    RowDivider()
+                    CheckRow(
+                        title = "Icon only",
+                        isSelected = !timeInStatusBar,
+                        onClick = { onSelectTimeInStatusBar(false) },
+                        modifier = Modifier.testTag("status_bar_icon")
                     )
                 }
             }

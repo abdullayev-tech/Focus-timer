@@ -21,6 +21,7 @@ class TimerPreferences(context: Context) {
         private const val KEY_AUTO_STOP_MINUTES = "pref_auto_stop_minutes"
         private const val KEY_STOPPED_RING_COLOR = "pref_stopped_ring_color"
         private const val KEY_ASKED_NOTIFICATIONS = "pref_asked_notifications"
+        private const val KEY_TIME_IN_STATUS_BAR = "pref_time_in_status_bar"
     }
 
     fun getSoundMode(): GentleSoundMode {
@@ -97,5 +98,13 @@ class TimerPreferences(context: Context) {
 
     fun setAskedForNotifications() {
         prefs.edit().putBoolean(KEY_ASKED_NOTIFICATIONS, true).apply()
+    }
+
+    fun getTimeInStatusBar(): Boolean {
+        return prefs.getBoolean(KEY_TIME_IN_STATUS_BAR, true)
+    }
+
+    fun setTimeInStatusBar(show: Boolean) {
+        prefs.edit().putBoolean(KEY_TIME_IN_STATUS_BAR, show).apply()
     }
 }
